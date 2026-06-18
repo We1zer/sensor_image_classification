@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+.history/
+.DS_Store
+
+# згенеровані результати — за бажанням можна закоментувати
+processed/
+features/*.csv
+models/*
+results/*
+!processed/.gitkeep
+!features/.gitkeep
+!models/.gitkeep
+!results/.gitkeep

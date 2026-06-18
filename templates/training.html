@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}Training — Sensor Classifier{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Training</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3"><i class="bi bi-cpu"></i> Навчання моделей</h1>
+
+{% if not features_csv_exists %}
+  <div class="alert alert-warning">
+    Немає <code>features/pulse_features.csv</code>.
+    Спочатку запустіть <a href="{{ url_for('pipeline.view') }}">Pipeline</a>.
+  </div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-12 col-lg-4">
+    <div class="card h-100">
+      <div class="card-header bg-light"><i class="bi bi-sliders"></i> Параметри</div>
+      <div class="card-body">
+        <form action="{{ url_for('training.run') }}" method="post">
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="use_file_number"
+                   id="use_fn">
+            <label class="form-check-label" for="use_fn">
+              Використати <code>file_number</code> як ознаку
+            </label>
+          </div>
+
+          <hr class="my-2">
+          <p class="small text-muted mb-1"><strong>Розширення:</strong></p>
+
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="use_xgboost"
+                   id="use_xgb"
+                   {% if has_xgboost %}checked{% else %}disabled{% endif %}>
+            <label class="form-check-label" for="use_xgb">
+              Додати <strong>XGBoost</strong> як 7-му модель
+              {% if not has_xgboost %}
+                <span class="badge bg-secondary ms-1" title="pip install xgboost">не встановлено</span>
+              {% endif %}
+            </label>
+          </div>
+
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="use_ensembles"
+                   id="use_ens" checked>
+            <label class="form-check-label" for="use_ens">
+              Ансамблі: <strong>Voting (soft)</strong> + <strong>Stacking</strong>
+              <small class="text-muted">(top-3 моделей)</small>
+            </label>
+          </div>
+
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="tune_top2"
+                   id="tune_top2">
+            <label class="form-check-label" for="tune_top2">
+              <strong>GridSearchCV</strong> для top-2 моделей
+              <small class="text-muted d-block">з GroupKFold за <code>source_image</code> (повільно: 1–5 хв)</small>
+            </label>
+          </div>
+
+          <button class="btn btn-primary" type="submit"
+                  {% if not features_csv_exists %}disabled{% endif %}>
+            <i class="bi bi-play-fill"></i> Тренувати
+          </button>
+        </form>
+
+        <hr>
+        <p class="small text-muted mb-1">Базовий набір моделей:</p>
+        <ul class="small text-muted mb-0">
+          <li>Logistic Regression</li>
+          <li>KNN</li>
+          <li>SVM (RBF)</li>
+          <li>Decision Tree</li>
+          <li>Random Forest</li>
+          <li>Gradient Boosting</li>
+          {% if has_xgboost %}<li>XGBoost</li>{% endif %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-8">
+    <div class="card h-100">
+      <div class="card-header bg-light d-flex justify-content-between">
+        <span><i class="bi bi-activity"></i> Статус</span>
+        {% if job %}<span class="text-muted small">job: {{ job.id }}</span>{% endif %}
+      </div>
+      <div class="card-body">
+        {% if job %}
+          <div id="job-status">
+            <p class="mb-2"><strong>Статус:</strong>
+              <span id="job-status-label" class="badge
+                  {% if job.status == 'done' %}bg-success
+                  {% elif job.status == 'error' %}bg-danger
+                  {% else %}bg-warning{% endif %}">{{ job.status }}</span>
+              <small class="text-muted ms-2" id="job-message">{{ job.message }}</small>
+            </p>
+            <div class="progress" style="height: 18px;">
+              <div id="job-progress"
+                   class="progress-bar progress-bar-striped
+                          {% if job.status == 'running' %}progress-bar-animated{% endif %}
+                          {% if job.status == 'error' %}bg-danger{% endif %}"
+                   role="progressbar"
+                   style="width: {{ 100 if job.status != 'running' else 50 }}%;">
+              </div>
+            </div>
+            {% if job.status == 'error' %}
+              <pre class="mt-3 small text-danger bg-light p-2">{{ job.message }}</pre>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        <div id="summary-block" class="mt-3"
+             {% if not summary %}style="display:none;"{% endif %}>
+          {% if summary %}
+            <h5 class="h6"><i class="bi bi-trophy"></i> Найкраща модель:
+              <span class="badge bg-success">{{ summary.best_name }}</span></h5>
+
+            {% if summary.rows %}
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle">
+                  <thead>
+                    <tr>
+                      <th>Тип</th>
+                      <th>Модель</th>
+                      <th>Accuracy</th>
+                      <th>Precision</th>
+                      <th>Recall</th>
+                      <th>F1-macro</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in summary.rows %}
+                      <tr {% if r.model == summary.best_name %}class="table-success fw-semibold"{% endif %}>
+                        <td>
+                          {% set kind = r.kind or 'base' %}
+                          {% if kind == 'base' %}
+                            <span class="badge bg-secondary">base</span>
+                          {% elif kind == 'tuned' %}
+                            <span class="badge bg-warning text-dark"
+                                  {% if r.best_params %}title="{{ r.best_params }}"{% endif %}>
+                              tuned
+                            </span>
+                          {% elif kind == 'ensemble' %}
+                            <span class="badge bg-info text-dark">ensemble</span>
+                          {% else %}
+                            <span class="badge bg-light text-dark">{{ kind }}</span>
+                          {% endif %}
+                        </td>
+                        <td>{{ r.model }}</td>
+                        <td>{{ '%.4f' % r.accuracy }}</td>
+                        <td>{{ '%.4f' % r.precision_macro }}</td>
+                        <td>{{ '%.4f' % r.recall_macro }}</td>
+                        <td>{{ '%.4f' % r.f1_macro }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-muted small mb-0">
+                <span class="badge bg-secondary">base</span> — базові моделі ·
+                <span class="badge bg-warning text-dark">tuned</span> — після GridSearchCV
+                (наведіть курсор для best_params) ·
+                <span class="badge bg-info text-dark">ensemble</span> — Voting / Stacking з top-3
+              </p>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if has_model_comparison or cm_name %}
+<div class="row g-3 mt-1">
+  {% if has_model_comparison %}
+    <div class="col-12 col-lg-7">
+      <div class="card h-100">
+        <div class="card-header bg-light">model_comparison.png</div>
+        <div class="card-body text-center">
+          <img class="img-fluid border rounded"
+               src="{{ url_for('training.serve_result', name='model_comparison.png') }}"
+               alt="model comparison">
+        </div>
+      </div>
+    </div>
+  {% endif %}
+  {% if cm_name %}
+    <div class="col-12 col-lg-5">
+      <div class="card h-100">
+        <div class="card-header bg-light">{{ cm_name }}</div>
+        <div class="card-body text-center">
+          <img class="img-fluid border rounded"
+               src="{{ url_for('training.serve_result', name=cm_name) }}"
+               alt="confusion matrix">
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if report_text %}
+<div class="card mt-3">
+  <div class="card-header bg-light">
+    <i class="bi bi-file-text"></i> classification_report.txt
+  </div>
+  <div class="card-body">
+    <pre class="small mb-0">{{ report_text }}</pre>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if job and job.status == 'running' %}
+<script>
+  function kindBadge(kind) {
+    if (kind === 'tuned') return '<span class="badge bg-warning text-dark">tuned</span>';
+    if (kind === 'ensemble') return '<span class="badge bg-info text-dark">ensemble</span>';
+    return '<span class="badge bg-secondary">base</span>';
+  }
+
+  window.startJobPolling({
+    jobId: {{ job_id|tojson }},
+    summaryUrl: {{ url_for('training.api_summary', job_id=job_id)|tojson }},
+    renderSummary: function (data, target) {
+      if (!data || !data.ready) return;
+      var html = '<h5 class="h6"><i class="bi bi-trophy"></i> Найкраща модель: '
+               + '<span class="badge bg-success">' + (data.best_name || '') + '</span></h5>';
+      if (data.rows && data.rows.length) {
+        html += '<div class="table-responsive"><table class="table table-sm table-striped align-middle">';
+        html += '<thead><tr><th>Тип</th><th>Модель</th><th>Accuracy</th>'
+              + '<th>Precision</th><th>Recall</th><th>F1-macro</th></tr></thead><tbody>';
+        data.rows.forEach(function (r) {
+          var cls = (r.model === data.best_name) ? ' class="table-success fw-semibold"' : '';
+          var bp = (r.best_params) ? ' title="' + String(r.best_params).replace(/"/g, '&quot;') + '"' : '';
+          html += '<tr' + cls + '>'
+               + '<td' + bp + '>' + kindBadge(r.kind || 'base') + '</td>'
+               + '<td>' + r.model + '</td>'
+               + '<td>' + Number(r.accuracy).toFixed(4) + '</td>'
+               + '<td>' + Number(r.precision_macro).toFixed(4) + '</td>'
+               + '<td>' + Number(r.recall_macro).toFixed(4) + '</td>'
+               + '<td>' + Number(r.f1_macro).toFixed(4) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+        html += '<p class="text-muted small mb-0">'
+              + '<span class="badge bg-secondary">base</span> · '
+              + '<span class="badge bg-warning text-dark">tuned</span> (GridSearchCV) · '
+              + '<span class="badge bg-info text-dark">ensemble</span> (Voting / Stacking)</p>';
+      }
+      target.innerHTML = html;
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}

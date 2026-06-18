@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Result — Sensor Classifier{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('predict.view') }}">Predict</a></li>
+    <li class="breadcrumb-item active">Result</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3"><i class="bi bi-clipboard-check"></i> Результат класифікації</h1>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-header bg-light">Завантажене зображення</div>
+      <div class="card-body text-center">
+        <img class="img-fluid border rounded" src="{{ image_url }}" alt="uploaded">
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-7">
+    {% if result.final_class %}
+      <div class="card h-100 border-success">
+        <div class="card-body text-center">
+          <p class="text-muted small mb-1">Фінальний клас (голосування за імпульсами)</p>
+          <h2 class="display-5 mb-1">{{ result.final_class }}</h2>
+          <p class="lead mb-2">
+            впевненість:
+            <span class="badge bg-success fs-5">
+              {{ format_proba(result.final_confidence) }}
+            </span>
+          </p>
+          <p class="text-muted small mb-0">
+            Знайдено імпульсів: <strong>{{ result.n_pulses_total }}</strong>,
+            якісних: <strong>{{ result.n_pulses_valid }}</strong>
+          </p>
+        </div>
+      </div>
+    {% else %}
+      <div class="card h-100 border-warning">
+        <div class="card-body">
+          <h4 class="text-warning">
+            <i class="bi bi-exclamation-triangle"></i> Класифікація не виконана
+          </h4>
+          <p class="mb-0">{{ result.warning or 'Не вдалось виділити сигнал.' }}</p>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if result.warning and result.final_class %}
+  <div class="alert alert-warning mt-3">
+    <i class="bi bi-info-circle"></i> {{ result.warning }}
+  </div>
+{% endif %}
+
+{% if chart_b64 %}
+<div class="card mt-3">
+  <div class="card-header bg-light">Середні ймовірності за класами</div>
+  <div class="card-body text-center">
+    <img class="img-fluid border rounded"
+         src="data:image/png;base64,{{ chart_b64 }}"
+         alt="probabilities chart">
+  </div>
+</div>
+{% endif %}
+
+{% if result.pulse_predictions %}
+<div class="card mt-3">
+  <div class="card-header bg-light">
+    <i class="bi bi-list-ol"></i> Прогнози по кожному імпульсу
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Клас</th>
+            <th>Confidence</th>
+            <th>Ймовірності</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in result.pulse_predictions %}
+            <tr>
+              <td>{{ p.pulse_index }}</td>
+              <td><span class="badge bg-secondary">{{ p['class'] }}</span></td>
+              <td>{{ format_proba(p.confidence) }}</td>
+              <td>
+                {% for cls, prob in p.probabilities.items() %}
+                  <span class="badge bg-light text-dark border me-1">
+                    {{ cls }}: {{ format_proba(prob) }}
+                  </span>
+                {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="mt-3">
+  <a class="btn btn-outline-primary" href="{{ url_for('predict.view') }}">
+    <i class="bi bi-arrow-left"></i> Класифікувати ще
+  </a>
+</div>
+{% endblock %}

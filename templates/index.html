@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Sensor Classifier{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">
+    <i class="bi bi-speedometer2"></i> Dashboard
+  </h1>
+  <span class="text-muted small">Огляд стану проєкту</span>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card status-card h-100 {{ 'border-success' if status.dataset.ready else 'border-warning' }}">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-2">
+          <i class="bi bi-images fs-3 me-2 text-primary-app"></i>
+          <h2 class="card-title h6 mb-0">Dataset</h2>
+        </div>
+        {% if status.dataset.ready %}
+          <p class="display-6 mb-0">{{ status.dataset.total }}</p>
+          <p class="text-muted small">PNG-зображень у dataset/</p>
+        {% else %}
+          <p class="mb-0 text-warning"><i class="bi bi-exclamation-triangle"></i> Папки порожні</p>
+          <p class="text-muted small">Покладіть PNG у dataset/PNG-1*/</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card status-card h-100 {{ 'border-success' if status.features.ready else 'border-secondary' }}">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-2">
+          <i class="bi bi-diagram-3 fs-3 me-2 text-primary-app"></i>
+          <h2 class="card-title h6 mb-0">Features</h2>
+        </div>
+        {% if status.features.ready %}
+          <p class="display-6 mb-0">{{ status.features.n_pulses }}</p>
+          <p class="text-muted small">імпульсів у pulse_features.csv</p>
+        {% else %}
+          <p class="mb-0 text-muted"><i class="bi bi-dash-circle"></i> ще не побудовано</p>
+          <p class="text-muted small">Запустіть Pipeline</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card status-card h-100 {{ 'border-success' if status.model.ready else 'border-secondary' }}">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-2">
+          <i class="bi bi-cpu fs-3 me-2 text-primary-app"></i>
+          <h2 class="card-title h6 mb-0">Model</h2>
+        </div>
+        {% if status.model.ready %}
+          <p class="h5 mb-0 text-success">{{ status.model.meta.best_name or 'готова' }}</p>
+          <p class="text-muted small">збережено у models/</p>
+        {% else %}
+          <p class="mb-0 text-muted"><i class="bi bi-dash-circle"></i> ще не навчена</p>
+          <p class="text-muted small">Запустіть Training</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="card status-card h-100 {{ 'border-success' if status.results.n_plots else 'border-secondary' }}">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-2">
+          <i class="bi bi-bar-chart fs-3 me-2 text-primary-app"></i>
+          <h2 class="card-title h6 mb-0">Plots</h2>
+        </div>
+        <p class="display-6 mb-0">{{ status.results.n_plots }}</p>
+        <p class="text-muted small">PNG у results/</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-light">
+        <i class="bi bi-lightning-charge"></i> Швидкі дії
+      </div>
+      <div class="card-body d-flex flex-wrap gap-2">
+        <form action="{{ url_for('pipeline.run_full') }}" method="post"
+              onsubmit="return confirm('Запустити повний pipeline (індекс → ознаки → тренування → графіки)?');">
+          <button class="btn btn-primary" type="submit"
+                  {% if not status.dataset.ready %}disabled{% endif %}>
+            <i class="bi bi-rocket-takeoff"></i> Повний pipeline
+          </button>
+        </form>
+        <a class="btn btn-outline-primary" href="{{ url_for('predict.view') }}">
+          <i class="bi bi-magic"></i> Класифікувати зображення
+        </a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('dataset.view') }}">
+          <i class="bi bi-images"></i> Перегляд dataset
+        </a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('results.view') }}">
+          <i class="bi bi-bar-chart"></i> Графіки
+        </a>
+        <form action="{{ url_for('pipeline.run_experiment') }}" method="post"
+              onsubmit="return confirm('Запустити експеримент original vs inverted? Це довго.');">
+          <button class="btn btn-outline-warning" type="submit"
+                  {% if not status.dataset.ready %}disabled{% endif %}>
+            <i class="bi bi-arrow-left-right"></i> Експеримент: original vs inverted
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-light">
+        <i class="bi bi-pie-chart"></i> Розподіл класів
+      </div>
+      <div class="card-body">
+        {% if status.dataset.ready %}
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr><th>Клас</th><th class="text-end">Зображень</th><th class="text-end">Імпульсів</th></tr>
+            </thead>
+            <tbody>
+              {% for cls, n in status.dataset.counts.items() %}
+                <tr>
+                  <td><span class="badge bg-secondary">{{ cls }}</span></td>
+                  <td class="text-end">{{ n }}</td>
+                  <td class="text-end">{{ status.features.class_counts.get(cls, 0) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="text-muted mb-0">
+            Дані поки що відсутні. Покладіть PNG у відповідні папки <code>dataset/</code>
+            або згенеруйте синтетичні через <code>generate_demo_data.py</code>.
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

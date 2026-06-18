@@ -1,0 +1,12 @@
+Найкраща модель: GradientBoosting
+
+              precision    recall  f1-score   support
+
+          RH       0.89      0.91      0.90        69
+     acetone       0.78      0.76      0.77        70
+     ammonia       0.97      0.97      0.97        58
+     ethanol       0.82      0.82      0.82        72
+
+    accuracy                           0.86       269
+   macro avg       0.86      0.86      0.86       269
+weighted avg       0.86      0.86      0.86       269

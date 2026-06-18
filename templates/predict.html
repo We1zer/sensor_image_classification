@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Predict — Sensor Classifier{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Predict</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3"><i class="bi bi-magic"></i> Класифікація нового зображення</h1>
+
+{% if not model_ready %}
+  <div class="alert alert-warning">
+    Модель ще не навчена. Спочатку запустіть
+    <a href="{{ url_for('training.view') }}">Training</a>.
+  </div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <form action="{{ url_for('predict.upload') }}" method="post"
+          enctype="multipart/form-data" id="predict-form">
+      <div class="dropzone mb-3" id="dropzone">
+        <input type="file" name="image" id="image-input" accept="image/png,image/jpeg" hidden>
+        <div id="dropzone-prompt">
+          <i class="bi bi-cloud-arrow-up fs-1 text-primary-app"></i>
+          <p class="mb-1"><strong>Перетягніть PNG сюди</strong> або клікніть, щоб вибрати файл</p>
+          <p class="text-muted small mb-0">Максимум {{ max_mb }} МБ. PNG / JPG.</p>
+        </div>
+        <div id="dropzone-filename" class="text-success" style="display:none;">
+          <i class="bi bi-file-earmark-image fs-3"></i>
+          <p class="mb-0" id="dropzone-filename-text"></p>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12 col-md-6">
+          <label for="file_number" class="form-label">file_number (опційно)</label>
+          <input type="number" class="form-control" id="file_number" name="file_number"
+                 placeholder="наприклад, 5" min="0">
+          <div class="form-text">
+            Має значення для acetone/ammonia/ethanol, якщо модель навчена з цією ознакою.
+          </div>
+        </div>
+        <div class="col-12 col-md-6 d-flex align-items-center">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="invert" id="invert">
+            <label class="form-check-label" for="invert">Інвертувати кольори</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <button class="btn btn-primary" type="submit"
+                {% if not model_ready %}disabled{% endif %}>
+          <i class="bi bi-magic"></i> Класифікувати
+        </button>
+        <button type="reset" class="btn btn-outline-secondary" id="reset-btn">
+          <i class="bi bi-x-circle"></i> Скинути
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>window.initDropzone && window.initDropzone();</script>
+{% endblock %}

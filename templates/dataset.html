@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Dataset — Sensor Classifier{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Dataset</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0"><i class="bi bi-images"></i> Dataset</h1>
+  <form action="{{ url_for('dataset.reindex') }}" method="post">
+    <button class="btn btn-outline-primary btn-sm" type="submit">
+      <i class="bi bi-arrow-clockwise"></i> Переіндексувати
+    </button>
+  </form>
+</div>
+
+<p class="text-muted small">
+  Папка зображень: <code>{{ dataset_dir }}</code>.
+  Сканування виконується через <code>src.data_loader.create_image_index()</code>.
+</p>
+
+{% if total == 0 %}
+  <div class="alert alert-warning">
+    <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Датасет порожній</h5>
+    Покладіть PNG-файли у відповідні підпапки:
+    <ul class="mb-0 mt-2">
+      {% for folder, cls in class_folders.items() %}
+        <li><code>dataset/{{ folder }}/</code> — клас <strong>{{ cls }}</strong></li>
+      {% endfor %}
+    </ul>
+    <hr>
+    Або згенеруйте синтетичні дані: <code>python generate_demo_data.py --n 30</code>.
+  </div>
+{% else %}
+  <div class="card">
+    <div class="card-body">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr>
+            <th style="width:160px">Прев'ю</th>
+            <th>Клас</th>
+            <th class="text-end">Зображень</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td>
+                {% if r.has_preview %}
+                  <a href="{{ url_for('dataset.preview', cls=r['class']) }}"
+                     target="_blank">
+                    <img src="{{ url_for('dataset.preview', cls=r['class']) }}"
+                         alt="preview {{ r['class'] }}"
+                         class="img-thumbnail preview-thumb">
+                  </a>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge bg-secondary">{{ r['class'] }}</span>
+              </td>
+              <td class="text-end fs-5">{{ r.count }}</td>
+            </tr>
+          {% endfor %}
+          <tr class="table-light">
+            <td></td>
+            <th>Всього</th>
+            <th class="text-end fs-5">{{ total }}</th>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

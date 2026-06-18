@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — Sensor Classifier{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Pipeline</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3"><i class="bi bi-diagram-3"></i> Побудова датасету ознак</h1>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-header bg-light">
+        <i class="bi bi-sliders"></i> Параметри
+      </div>
+      <div class="card-body">
+        <form action="{{ url_for('pipeline.run') }}" method="post">
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="invert" id="invert">
+            <label class="form-check-label" for="invert">
+              Інвертувати кольори зображень
+            </label>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="save_pulse_images"
+                   id="save_pi" checked>
+            <label class="form-check-label" for="save_pi">
+              Зберігати вирізані PNG імпульсів у processed/pulse_images/
+            </label>
+          </div>
+
+          <div class="mb-3">
+            <label for="segmentation" class="form-label">
+              <strong>Метод сегментації імпульсів</strong>
+            </label>
+            <select class="form-select form-select-sm" id="segmentation"
+                    name="segmentation">
+              <option value="full_cycle" selected>
+                Full cycle — від початку наростання до наступного (з релаксацією)
+              </option>
+              <option value="peak_centered">
+                Peak-centered — вікно навколо піка (старий метод)
+              </option>
+            </select>
+            <div class="form-text">
+              <strong>Full cycle</strong> рекомендований: захоплює і відгук
+              на УФ-імпульс, і фазу релаксації. Це важливо для розрізнення
+              речовин з різною кінетикою десорбції (acetone vs ethanol).
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="augment_factor" class="form-label">
+              <strong>Signal augmentation</strong>
+              <small class="text-muted">— копій на кожен імпульс</small>
+            </label>
+            <input type="number" class="form-control form-control-sm"
+                   id="augment_factor" name="augment_factor"
+                   min="0" max="10" step="1" value="0"
+                   style="max-width: 100px;">
+            <div class="form-text">
+              0 = вимкнено. 2–3 — добре для acetone/ethanol. Кожна копія
+              отримує невеликий шум, амплітудний скейл і часовий зсув.
+              source_image зберігається — group split продовжує працювати.
+            </div>
+          </div>
+
+          <button class="btn btn-primary" type="submit">
+            <i class="bi bi-play-fill"></i> Запустити побудову
+          </button>
+        </form>
+
+        <hr>
+        <p class="small text-muted mb-2">Додаткові режими:</p>
+        <div class="d-flex flex-wrap gap-2">
+          <form action="{{ url_for('pipeline.run_full') }}" method="post"
+                onsubmit="return confirm('Запустити повний pipeline?');">
+            <button class="btn btn-outline-primary btn-sm" type="submit">
+              <i class="bi bi-rocket-takeoff"></i> Повний pipeline
+            </button>
+          </form>
+          <form action="{{ url_for('pipeline.run_experiment') }}" method="post"
+                onsubmit="return confirm('Запустити експеримент original vs inverted?');">
+            <button class="btn btn-outline-warning btn-sm" type="submit">
+              <i class="bi bi-arrow-left-right"></i> original vs inverted
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-header bg-light d-flex justify-content-between">
+        <span><i class="bi bi-activity"></i> Статус задачі</span>
+        {% if job %}<span class="text-muted small">job: {{ job.id }}</span>{% endif %}
+      </div>
+      <div class="card-body" id="job-block"
+           data-job-id="{{ job_id or '' }}"
+           data-summary-url="{{ url_for('pipeline.api_summary', job_id=job_id or '_') }}">
+
+        {% if not job %}
+          <p class="text-muted mb-0">
+            Натисніть «Запустити побудову», щоб стартувати фонову задачу.
+            На цій сторінці показано прогрес поточного запуску і резюме після завершення.
+          </p>
+          {% if features_csv_exists %}
+            <hr>
+            <p class="mb-1"><i class="bi bi-check-circle text-success"></i>
+              Файл ознак уже існує:</p>
+            <a class="btn btn-outline-secondary btn-sm"
+               href="{{ url_for('pipeline.download_features') }}">
+              <i class="bi bi-download"></i> pulse_features.csv
+            </a>
+          {% endif %}
+        {% else %}
+          <div id="job-status">
+            <p class="mb-2"><strong>Статус:</strong>
+              <span id="job-status-label" class="badge
+                  {% if job.status == 'done' %}bg-success
+                  {% elif job.status == 'error' %}bg-danger
+                  {% else %}bg-warning{% endif %}">
+                {{ job.status }}
+              </span>
+              <small class="text-muted ms-2" id="job-message">{{ job.message }}</small>
+            </p>
+            <div class="progress" style="height: 18px;">
+              <div id="job-progress"
+                   class="progress-bar progress-bar-striped
+                          {% if job.status == 'running' %}progress-bar-animated{% endif %}
+                          {% if job.status == 'error' %}bg-danger{% endif %}"
+                   role="progressbar"
+                   style="width: {{ 100 if job.status != 'running' else 50 }}%;">
+              </div>
+            </div>
+            {% if job.status == 'error' %}
+              <pre class="mt-3 small text-danger bg-light p-2">{{ job.message }}</pre>
+            {% endif %}
+          </div>
+
+          <div id="summary-block" class="mt-3" {% if not summary and not extra %}style="display:none;"{% endif %}>
+            {% if summary %}
+              <h5 class="h6"><i class="bi bi-clipboard-data"></i> Результат</h5>
+              <p class="mb-1">Імпульсів отримано:
+                <strong id="n-pulses">{{ summary.n_pulses }}</strong></p>
+              <ul class="mb-2" id="class-counts">
+                {% for cls, n in summary.class_counts.items() %}
+                  <li>{{ cls }}: <strong>{{ n }}</strong></li>
+                {% endfor %}
+              </ul>
+              {% if summary.features_csv_exists %}
+                <a class="btn btn-outline-success btn-sm"
+                   href="{{ url_for('pipeline.download_features') }}">
+                  <i class="bi bi-download"></i> Завантажити pulse_features.csv
+                </a>
+              {% endif %}
+            {% endif %}
+
+            {% if extra %}
+              <h5 class="h6"><i class="bi bi-clipboard-check"></i> Результат повного запуску</h5>
+              {% if extra.error %}
+                <div class="alert alert-warning mb-2">{{ extra.error }}</div>
+              {% endif %}
+              {% if extra.n_pulses is defined %}
+                <p class="mb-1">Імпульсів: <strong>{{ extra.n_pulses }}</strong></p>
+              {% endif %}
+              {% if extra.best_name %}
+                <p class="mb-1">Найкраща модель:
+                  <span class="badge bg-success">{{ extra.best_name }}</span></p>
+              {% endif %}
+              {% if extra.original and extra.inverted %}
+                <table class="table table-sm mt-2 mb-1">
+                  <thead><tr><th>Варіант</th><th>Best</th><th>F1-macro</th><th>Accuracy</th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td>original</td>
+                      <td><span class="badge bg-secondary">{{ extra.original.best }}</span></td>
+                      <td>{{ '%.4f' % extra.original.f1_macro }}</td>
+                      <td>{{ '%.4f' % extra.original.accuracy }}</td>
+                    </tr>
+                    <tr>
+                      <td>inverted</td>
+                      <td><span class="badge bg-secondary">{{ extra.inverted.best }}</span></td>
+                      <td>{{ '%.4f' % extra.inverted.f1_macro }}</td>
+                      <td>{{ '%.4f' % extra.inverted.accuracy }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                {% if extra.csv %}
+                  <a class="btn btn-outline-secondary btn-sm"
+                     href="{{ url_for('results.file', name=extra.csv) }}">
+                    <i class="bi bi-download"></i> {{ extra.csv }}
+                  </a>
+                {% endif %}
+              {% endif %}
+              {% if extra.plots %}
+                <p class="small text-muted mt-2 mb-1">Створено графіків: {{ extra.plots|length }}</p>
+                <a class="btn btn-outline-primary btn-sm"
+                   href="{{ url_for('results.view') }}">
+                  <i class="bi bi-bar-chart"></i> Перейти до галереї
+                </a>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if job and job.status == 'running' %}
+<script>
+  window.startJobPolling({
+    jobId: {{ job_id|tojson }},
+    summaryUrl: {{ url_for('pipeline.api_summary', job_id=job_id)|tojson }},
+    renderSummary: function (data, target) {
+      if (!data || !data.ready) return;
+      var html = '<h5 class="h6"><i class="bi bi-clipboard-data"></i> Результат</h5>';
+      html += '<p class="mb-1">Імпульсів: <strong>' + data.n_pulses + '</strong></p>';
+      html += '<ul class="mb-2">';
+      Object.keys(data.class_counts || {}).forEach(function (k) {
+        html += '<li>' + k + ': <strong>' + data.class_counts[k] + '</strong></li>';
+      });
+      html += '</ul>';
+      if (data.features_csv_exists) {
+        html += '<a class="btn btn-outline-success btn-sm" href="'
+                + {{ url_for('pipeline.download_features')|tojson }}
+                + '"><i class="bi bi-download"></i> pulse_features.csv</a>';
+      }
+      target.innerHTML = html;
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}
