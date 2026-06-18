@@ -1,0 +1,10 @@
+reducer,classifier,f1_macro_mean,f1_macro_std
+none,RandomForest,0.8885,0.0085
+none,GradientBoosting,0.8793,0.006
+PCA(0.95),RandomForest,0.8551,0.0121
+PCA(0.95),GradientBoosting,0.8513,0.0154
+LDA,GradientBoosting,0.8411,0.0298
+LDA,RandomForest,0.84,0.0275
+LDA,SVM,0.8285,0.0216
+none,SVM,0.7915,0.0285
+PCA(0.95),SVM,0.7899,0.0294

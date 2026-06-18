@@ -154,6 +154,70 @@ def _build_top_estimator_list(top_names: list[str], use_xgboost: bool):
     return [(n, fresh[n]) for n in top_names if n in fresh]
 
 
+def cross_validate_dimreduction(features_csv: str = cfg.FEATURES_CSV,
+                                n_splits: int = 5,
+                                verbose: bool = True) -> pd.DataFrame:
+    from sklearn.pipeline import Pipeline
+    from sklearn.decomposition import PCA
+    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+    from sklearn.model_selection import cross_val_score
+
+    cfg.set_global_seeds()
+    df = pd.read_csv(features_csv)
+    X, y_raw, groups, _ = _select_X_y(df)
+    le = LabelEncoder()
+    y = le.fit_transform(y_raw)
+    n_classes = len(le.classes_)
+
+    n_groups = len(np.unique(groups))
+    n_splits = max(2, min(n_splits, n_groups))
+    cv = GroupKFold(n_splits=n_splits)
+
+    reducers = {
+        "none": None,
+        "PCA(0.95)": PCA(n_components=0.95, random_state=cfg.RANDOM_STATE),
+        "LDA": LinearDiscriminantAnalysis(
+            n_components=min(n_classes - 1, X.shape[1])),
+    }
+    classifiers = {
+        "SVM": SVC(kernel="rbf", C=1.0, gamma="scale",
+                   random_state=cfg.RANDOM_STATE),
+        "RandomForest": RandomForestClassifier(
+            n_estimators=300, random_state=cfg.RANDOM_STATE, n_jobs=-1),
+        "GradientBoosting": GradientBoostingClassifier(
+            random_state=cfg.RANDOM_STATE),
+    }
+
+    rows = []
+    for rname, reducer in reducers.items():
+        for cname, clf in classifiers.items():
+            steps = [("scaler", StandardScaler())]
+            if reducer is not None:
+                from sklearn.base import clone
+                steps.append(("reduce", clone(reducer)))
+            from sklearn.base import clone as _clone
+            steps.append(("clf", _clone(clf)))
+            pipe = Pipeline(steps)
+            scores = cross_val_score(pipe, X, y, groups=groups, cv=cv,
+                                     scoring="f1_macro", n_jobs=-1)
+            rows.append({
+                "reducer": rname, "classifier": cname,
+                "f1_macro_mean": round(float(np.mean(scores)), 4),
+                "f1_macro_std": round(float(np.std(scores)), 4),
+            })
+            if verbose:
+                print(f"    {rname:10s} + {cname:16s}: "
+                      f"f1 {np.mean(scores):.4f} ± {np.std(scores):.4f}")
+
+    out = pd.DataFrame(rows).sort_values(
+        "f1_macro_mean", ascending=False).reset_index(drop=True)
+    os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
+    out.to_csv(os.path.join(cfg.RESULTS_DIR, "dimreduction_cv.csv"), index=False)
+    if verbose:
+        print(f"[OK] Збережено: {cfg.RESULTS_DIR}/dimreduction_cv.csv")
+    return out
+
+
 def cross_validate_models(features_csv: str = cfg.FEATURES_CSV,
                           n_splits: int = 5,
                           use_xgboost: bool | None = None,

@@ -88,6 +88,7 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
                                model_name: str = "RandomForest",
                                n_splits: int = 5,
                                use_xgboost: bool = True,
+                               feature_cols: list[str] | None = None,
                                save_plots: bool = True,
                                verbose: bool = True) -> dict:
     from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -105,7 +106,8 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
     if df.empty:
         raise ValueError("Файл ознак порожній.")
 
-    feature_cols = list(FEATURE_NAMES)
+    if feature_cols is None:
+        feature_cols = list(FEATURE_NAMES)
     X = df[feature_cols].values.astype(np.float64)
     le = LabelEncoder()
     y = le.fit_transform(df["class"].values)

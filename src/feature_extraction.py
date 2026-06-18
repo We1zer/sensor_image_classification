@@ -5,6 +5,12 @@ from scipy.signal import find_peaks
 from scipy.stats import skew, kurtosis
 from scipy.fft import rfft, rfftfreq
 
+try:
+    import pywt
+    _HAS_PYWT = True
+except ImportError:
+    _HAS_PYWT = False
+
 
 TIME_FEATURE_NAMES = [
     "amplitude", "min_val", "max_val", "mean_val", "median_val", "std_val",
@@ -25,7 +31,21 @@ FFT_FEATURE_NAMES = [
     "fft_flatness",
 ]
 
-FEATURE_NAMES = TIME_FEATURE_NAMES + FFT_FEATURE_NAMES
+SHAPE_FEATURE_NAMES = [
+    "rise_fall_ratio",
+    "fwhm",
+]
+
+WAVELET_FEATURE_NAMES = [
+    "wl_energy_a3",
+    "wl_energy_d3",
+    "wl_energy_d2",
+    "wl_energy_d1",
+    "wl_entropy",
+]
+
+FEATURE_NAMES = (TIME_FEATURE_NAMES + FFT_FEATURE_NAMES
+                 + SHAPE_FEATURE_NAMES + WAVELET_FEATURE_NAMES)
 
 
 def _safe_signal(pulse: np.ndarray) -> np.ndarray:
@@ -141,6 +161,46 @@ def _fft_features(p: np.ndarray) -> dict:
     }
 
 
+def _fwhm(p: np.ndarray) -> float:
+    if len(p) < 4:
+        return 0.0
+    a_min = float(np.min(p))
+    a_max = float(np.max(p))
+    span = a_max - a_min
+    if span < 1e-9:
+        return 0.0
+    half = a_min + 0.5 * span
+    above = np.where(p >= half)[0]
+    if len(above) < 2:
+        return 0.0
+    return float(above[-1] - above[0] + 1) / len(p)
+
+
+def _wavelet_features(p: np.ndarray) -> dict:
+    if not _HAS_PYWT or len(p) < 8:
+        return {k: 0.0 for k in WAVELET_FEATURE_NAMES}
+    p_centered = p - float(np.mean(p))
+    try:
+        coeffs = pywt.wavedec(p_centered, "db4", level=3)
+    except Exception:
+        return {k: 0.0 for k in WAVELET_FEATURE_NAMES}
+
+    energies = np.array([float(np.sum(np.square(c))) for c in coeffs])
+    total = float(np.sum(energies))
+    if total <= 1e-12 or len(energies) < 4:
+        return {k: 0.0 for k in WAVELET_FEATURE_NAMES}
+
+    fr = energies / total
+    entropy = float(-np.sum(fr * np.log(fr + 1e-12)))
+    return {
+        "wl_energy_a3": float(fr[0]),
+        "wl_energy_d3": float(fr[1]),
+        "wl_energy_d2": float(fr[2]),
+        "wl_energy_d1": float(fr[3]),
+        "wl_entropy": entropy,
+    }
+
+
 def extract_features(pulse: np.ndarray) -> dict:
     p = _safe_signal(pulse)
     n = len(p)
@@ -208,6 +268,9 @@ def extract_features(pulse: np.ndarray) -> dict:
         "duration": duration,
         "argmax_rel": argmax_rel,
         "argmin_rel": argmin_rel,
+        "rise_fall_ratio": rise / (rise + fall + 1e-9),
+        "fwhm": _fwhm(p),
     }
     feats.update(_fft_features(p))
+    feats.update(_wavelet_features(p))
     return feats
