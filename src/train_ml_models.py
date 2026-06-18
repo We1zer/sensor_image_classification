@@ -154,6 +154,110 @@ def _build_top_estimator_list(top_names: list[str], use_xgboost: bool):
     return [(n, fresh[n]) for n in top_names if n in fresh]
 
 
+def cross_validate_models(features_csv: str = cfg.FEATURES_CSV,
+                          n_splits: int = 5,
+                          use_xgboost: bool | None = None,
+                          use_file_number: bool = False,
+                          verbose: bool = True) -> dict:
+    cfg.set_global_seeds()
+
+    if not os.path.exists(features_csv):
+        raise FileNotFoundError(
+            f"Не знайдено {features_csv}. Спочатку запустіть dataset_builder.")
+
+    df = pd.read_csv(features_csv)
+    if df.empty:
+        raise ValueError("Файл ознак порожній.")
+
+    if use_xgboost is None:
+        use_xgboost = HAS_XGBOOST
+
+    X, y_raw, groups, feature_cols = _select_X_y(df, use_file_number)
+    le = LabelEncoder()
+    y = le.fit_transform(y_raw)
+
+    if "is_augmented" in df.columns:
+        is_aug = df["is_augmented"].astype(bool).values
+    else:
+        is_aug = np.zeros(len(df), dtype=bool)
+
+    n_groups = len(np.unique(groups))
+    n_splits = max(2, min(n_splits, n_groups))
+    gkf = GroupKFold(n_splits=n_splits)
+
+    model_names = list(_build_models(use_xgboost=use_xgboost).keys())
+    per_model: dict[str, dict[str, list]] = {
+        name: {"accuracy": [], "f1_macro": []} for name in model_names
+    }
+
+    if verbose:
+        print(f"  GroupKFold: n_splits={n_splits}, груп(знімків)={n_groups}, "
+              f"рядків={len(df)} (аугментованих: {int(is_aug.sum())})")
+
+    for fold, (train_idx, test_idx) in enumerate(
+            gkf.split(X, y, groups=groups), start=1):
+        test_idx = test_idx[~is_aug[test_idx]]
+
+        X_train, X_test = X[train_idx], X[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+
+        scaler = StandardScaler()
+        X_train_s = scaler.fit_transform(X_train)
+        X_test_s = scaler.transform(X_test)
+
+        models = _build_models(use_xgboost=use_xgboost)
+        for name, model in models.items():
+            model.fit(X_train_s, y_train)
+            y_pred = model.predict(X_test_s)
+            per_model[name]["accuracy"].append(
+                accuracy_score(y_test, y_pred))
+            per_model[name]["f1_macro"].append(
+                f1_score(y_test, y_pred, average="macro", zero_division=0))
+
+        if verbose:
+            print(f"    фолд {fold}/{n_splits}: "
+                  f"test={len(test_idx)} (оригіналів)")
+
+    rows = []
+    for name, d in per_model.items():
+        acc = np.asarray(d["accuracy"], dtype=float)
+        f1 = np.asarray(d["f1_macro"], dtype=float)
+        rows.append({
+            "model": name,
+            "n_folds": int(len(f1)),
+            "accuracy_mean": float(acc.mean()),
+            "accuracy_std": float(acc.std()),
+            "f1_macro_mean": float(f1.mean()),
+            "f1_macro_std": float(f1.std()),
+            "f1_macro_folds": json.dumps([round(float(v), 4) for v in f1]),
+        })
+
+    results_df = pd.DataFrame(rows).sort_values(
+        "f1_macro_mean", ascending=False).reset_index(drop=True)
+
+    os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
+    out_csv = os.path.join(cfg.RESULTS_DIR, "cv_model_comparison.csv")
+    results_df.to_csv(out_csv, index=False)
+
+    if verbose:
+        print()
+        print(f"  GroupKFold ({n_splits} фолдів) — mean ± std:")
+        for _, r in results_df.iterrows():
+            print(f"    {r['model']:20s}  "
+                  f"f1_macro {r['f1_macro_mean']:.4f} ± {r['f1_macro_std']:.4f}   "
+                  f"acc {r['accuracy_mean']:.4f} ± {r['accuracy_std']:.4f}")
+        print()
+        print(f"[OK] Збережено: {out_csv}")
+
+    return {
+        "results": results_df,
+        "per_model": per_model,
+        "n_splits": n_splits,
+        "feature_cols": feature_cols,
+        "class_names": list(le.classes_),
+    }
+
+
 def train_and_compare(features_csv: str = cfg.FEATURES_CSV,
                       use_file_number: bool = False,
                       use_xgboost: bool | None = None,
