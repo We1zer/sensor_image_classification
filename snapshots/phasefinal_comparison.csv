@@ -1,0 +1,7 @@
+approach,input,classifier,pulse_f1_macro,image_f1_macro,source_phase
+ML features-only,35 hand features,XGBoost,0.8926,0.9211,phase5
+ML features-only,35 hand features,RandomForest,0.8896,0.9210,phase6
+Hybrid (CNN-emb + features),signal + 35 features,XGBoost,0.8748,0.9079,phase5
+Hybrid (CNN-emb + features),signal + 35 features,RandomForest,0.8785,0.9053,phase5
+1D-CNN,signal (resampled 200),CNN,0.8253,0.8455,phase4
+2D-CNN,pulse PNG (96x96),CNN,0.8044,0.8135,phasefinal
