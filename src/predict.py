@@ -10,6 +10,7 @@ from .signal_extraction import mask_to_clean_signal
 from .pulse_segmentation import find_pulse_boundaries, crop_pulse_signal
 from .pulse_quality import is_valid_pulse
 from .feature_extraction import extract_features
+from . import fusion as fz
 
 
 def _load_model_bundle():
@@ -25,6 +26,7 @@ def _load_model_bundle():
 def predict_image(image_path: str,
                   invert: bool = False,
                   file_number: int = 0,
+                  fusion_strategy: str = "weighted",
                   verbose: bool = True) -> dict:
     if not os.path.exists(image_path):
         raise FileNotFoundError(image_path)
@@ -61,6 +63,7 @@ def predict_image(image_path: str,
     bounds = find_pulse_boundaries(y, method=seg_method)
     pulse_predictions = []
     probs_acc = []
+    weights_acc = []
 
     for k, (a, b) in enumerate(bounds):
         pulse = crop_pulse_signal(y, a, b)
@@ -99,6 +102,8 @@ def predict_image(image_path: str,
                               for i in range(len(class_names))},
         })
         probs_acc.append(probs)
+        weights_acc.append(fz.pulse_quality_weight(
+            local_cov, feats.get("amp_to_noise", 1.0)))
 
     if not pulse_predictions:
         return {
@@ -113,10 +118,13 @@ def predict_image(image_path: str,
                         "достатньо якісних імпульсів."),
         }
 
-    avg_probs = np.mean(np.stack(probs_acc), axis=0)
-    final_idx = int(np.argmax(avg_probs))
+    probs_stack = np.stack(probs_acc)
+    weights_arr = np.asarray(weights_acc, dtype=float)
+    fused = fz.fuse_proba(probs_stack, strategy=fusion_strategy,
+                          weights=weights_arr)
+    final_idx = int(np.argmax(fused))
     final_class = class_names[final_idx]
-    final_conf = float(avg_probs[final_idx])
+    final_conf = float(fused[final_idx])
 
     result = {
         "image": image_path,
@@ -125,7 +133,8 @@ def predict_image(image_path: str,
         "pulse_predictions": pulse_predictions,
         "final_class": final_class,
         "final_confidence": final_conf,
-        "average_probabilities": {class_names[i]: float(avg_probs[i])
+        "fusion_strategy": fusion_strategy,
+        "average_probabilities": {class_names[i]: float(fused[i])
                                   for i in range(len(class_names))},
         "warning": None if final_conf >= 0.55 else
                    "Низька впевненість моделі. Рекомендовано перевірити якість зображення.",

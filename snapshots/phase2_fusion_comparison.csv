@@ -1,0 +1,5 @@
+level,strategy,f1_macro_oof,accuracy_oof,f1_macro_fold_mean,f1_macro_fold_std
+pulse,-,0.8893,0.8851,0.8884,0.0143
+image,majority,0.9146,0.9146,0.9141,0.0235
+image,mean_proba,0.9165,0.9169,0.9163,0.0256
+image,weighted,0.9188,0.9191,0.9187,0.022
