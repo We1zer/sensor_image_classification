@@ -1,0 +1,9 @@
+augment_factor,model,n_augmented_rows,f1_macro_mean,f1_macro_std,accuracy_mean
+0,RandomForest,0,0.8884,0.0143,0.8851
+0,XGBoost,0,0.8916,0.0168,0.889
+1,RandomForest,1027,0.8899,0.02,0.8871
+1,XGBoost,1027,0.8873,0.0174,0.8841
+2,RandomForest,2054,0.8861,0.0158,0.8832
+2,XGBoost,2054,0.8868,0.0209,0.8841
+3,RandomForest,3081,0.8898,0.0216,0.8871
+3,XGBoost,3081,0.8744,0.022,0.8724
