@@ -87,6 +87,9 @@ def set_global_seeds(seed: int = RANDOM_STATE) -> None:
 
 CNN_IMG_SIZE = (96, 96)
 
+CNN_SIG_LEN = 200
+CNN_SIG_SCALE = 64.0
+
 for d in [PROCESSED_DIR, CROPPED_DIR, INVERTED_DIR, PULSE_IMAGES_DIR,
           PULSE_SIGNALS_DIR, FEATURES_DIR, MODELS_DIR, RESULTS_DIR]:
     os.makedirs(d, exist_ok=True)
