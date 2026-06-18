@@ -68,21 +68,22 @@ def build_cnn1d(input_len: int, n_classes: int):
     tf = _require_tf()
     from tensorflow.keras import layers, models
 
-    model = models.Sequential([
-        layers.Input(shape=(input_len, 1)),
-        layers.Conv1D(16, 7, padding="same"), layers.BatchNormalization(),
-        layers.Activation("relu"), layers.MaxPooling1D(2),
-        layers.Conv1D(32, 5, padding="same"), layers.BatchNormalization(),
-        layers.Activation("relu"), layers.MaxPooling1D(2),
-        layers.Conv1D(64, 3, padding="same"), layers.BatchNormalization(),
-        layers.Activation("relu"), layers.MaxPooling1D(2),
-        layers.Conv1D(64, 3, padding="same"), layers.BatchNormalization(),
-        layers.Activation("relu"),
-        layers.GlobalAveragePooling1D(),
-        layers.Dropout(0.3),
-        layers.Dense(64, activation="relu", name="embedding"),
-        layers.Dense(n_classes, activation="softmax"),
-    ])
+    inp = layers.Input(shape=(input_len, 1))
+    x = inp
+    for filt, k in [(16, 7), (32, 5), (64, 3)]:
+        x = layers.Conv1D(filt, k, padding="same")(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Activation("relu")(x)
+        x = layers.MaxPooling1D(2)(x)
+    x = layers.Conv1D(64, 3, padding="same")(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation("relu")(x)
+    x = layers.GlobalAveragePooling1D()(x)
+    x = layers.Dropout(0.3)(x)
+    emb = layers.Dense(64, activation="relu", name="embedding")(x)
+    out = layers.Dense(n_classes, activation="softmax")(emb)
+
+    model = models.Model(inp, out)
     model.compile(optimizer="adam",
                   loss="sparse_categorical_crossentropy",
                   metrics=["accuracy"])

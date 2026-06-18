@@ -1,0 +1,5 @@
+approach,level,f1_macro_oof,accuracy_oof
+features-only,pulse,0.8926,0.889
+features-only,image,0.9211,0.9213
+hybrid,pulse,0.8748,0.8705
+hybrid,image,0.9079,0.9079
