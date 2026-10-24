@@ -16,6 +16,9 @@ contourpy==1.3.0
 pillow==10.4.0
 seaborn>=0.12
 opencv-python==4.10.0.84
+# Вейвлет-ознаки (feature_extraction._wavelet_features). Без пакета всі 5
+# ознак мовчки дорівнюють нулю — гілка ознак фактично працює на 30.
+PyWavelets==1.7.0
 joblib>=1.3
 tqdm>=4.65
 # Розширене ML (XGBoost як 7-ма модель, Voting/Stacking ансамблі):
