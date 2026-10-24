@@ -54,13 +54,24 @@
               </option>
             </optgroup>
             <optgroup label="Гілка картинок (192×96, gray+mask)">
-              {% for m in image_models %}
+              {% for m in image_models|rejectattr('cross') %}
                 <option value="image:{{ m.method }}"
                         {% if selected_model == 'image:' ~ m.method %}selected{% endif %}>
                   {{ m.method }} ({{ '%s ознак' % m.n_features if m.n_features else 'середнє ймовірностей' }}){{ f1(m.method) }}
                 </option>
               {% endfor %}
             </optgroup>
+            {% set cross_models = image_models|selectattr('cross')|list %}
+            {% if cross_models %}
+            <optgroup label="Картинка + ознаки (середнє ймовірностей по імпульсу)">
+              {% for m in cross_models %}
+                <option value="image:{{ m.method }}"
+                        {% if selected_model == 'image:' ~ m.method %}selected{% endif %}>
+                  {{ m.method }}{{ f1(m.method) }}
+                </option>
+              {% endfor %}
+            </optgroup>
+            {% endif %}
           </select>
           <div class="form-text">
             Поруч із назвою — <strong>f1-macro на рівні знімка</strong>

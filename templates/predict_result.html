@@ -44,7 +44,7 @@
             <p class="text-muted small mb-0">
               Модель: <strong>{{ result.model }}</strong>
               <span class="badge bg-light text-dark border">
-                {{ 'картинки' if result.branch == 'image' else 'ознаки' }}
+                {{ {'image': 'картинки', 'image+features': 'картинка + ознаки'}.get(result.branch, 'ознаки') }}
               </span>
               {% if result.spec %}<code class="small">{{ result.spec }}</code>{% endif %}
             </p>

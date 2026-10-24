@@ -30,7 +30,6 @@ _KEY_PARAMS = (
 
 _STRATEGY_RANK = {"weighted": 2, "mean_proba": 1, "majority": 0}
 
-
 def _pick_best(scores: dict) -> str:
     known = {s: v for s, v in scores.items() if v is not None}
     if not known:
@@ -85,6 +84,13 @@ def features_rows(n_splits: int = 5,
         res = cross_validate_with_fusion(
             model_name=name, n_splits=n_splits,
             save_plots=False, save_csv=False, verbose=False)
+
+        o = res["oof"]
+        if o["pulse_id"] is not None:
+            from .image_methods import save_oof_arrays, FEATURES_OOF_SPEC
+            save_oof_arrays(f"features + {name}", FEATURES_OOF_SPEC,
+                            o["oof"], o["y"], o["weights"], o["fold"],
+                            o["image_key"], o["pulse_id"], res["class_names"])
 
         img = res["image_results"]
         best = _pick_best({s: d["f1_oof"] for s, d in img.items()})
@@ -208,6 +214,24 @@ def image_rows(n_splits: int = 5,
         row = _image_row_from_evaluate(
             r, "ensemble", data.spec.name, None,
             ("mean(" + ", ".join(members) + "), рівні ваги", "{}"), "")
+        row["source"] = "OOF-ансамбль"
+        rows.append(row)
+
+    for name, (img_model, feat_model) in store.CROSS_ENSEMBLES.items():
+        img_oof = store.OOF_NAME.get(img_model, img_model)
+        r = im.ensemble_row(
+            name, [img_oof, (f"features + {feat_model}", im.FEATURES_OOF_SPEC)],
+            data.spec.name)
+        if r is None:
+            if verbose:
+                print(f"  [--] {name}: немає OOF 2D-CNN або features + "
+                      f"{feat_model} — пропускаю")
+            continue
+        row = _image_row_from_evaluate(
+            r, "ensemble", data.spec.name, None,
+            (f"mean({img_model}, features + {feat_model}), рівні ваги", "{}"), "")
+        row["branch"] = "image+features"
+        row["input"] = f"{data.spec.name} + 35 числових ознак"
         row["source"] = "OOF-ансамбль"
         rows.append(row)
 

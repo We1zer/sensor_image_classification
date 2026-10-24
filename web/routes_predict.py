@@ -269,7 +269,8 @@ def _compare_models(path: str, invert: bool = False,
             try:
                 r = predict_image_model(path, method=info["method"],
                                         invert=invert, verbose=False)
-                out.append(_row(info["method"], "image", info["method"], r=r))
+                out.append(_row(info["method"], r.get("branch", "image"),
+                                info["method"], r=r))
             except Exception as e:
                 out.append(_row(info["method"], "image", "", err=str(e)))
     except Exception:

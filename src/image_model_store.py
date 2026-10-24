@@ -48,11 +48,21 @@ ENSEMBLES: dict[str, tuple[str, ...]] = {
     "Ансамбль: HOG + XGBoost + 2D-CNN": ("HOG + XGBoost", CNN_METHOD),
 }
 
+CROSS_ENSEMBLES: dict[str, tuple[str, str]] = {
+    "Ансамбль: 2D-CNN + ознаки RandomForest": (CNN_METHOD, "RandomForest"),
+    "Ансамбль: 2D-CNN + ознаки GradientBoosting": (CNN_METHOD, "GradientBoosting"),
+    "Ансамбль: 2D-CNN + ознаки SVM": (CNN_METHOD, "SVM"),
+}
+
 OOF_NAME = {CNN_METHOD: "2D-CNN (fixed)"}
 
 
 def is_ensemble(method: str) -> bool:
     return method in ENSEMBLES
+
+
+def is_cross_ensemble(method: str) -> bool:
+    return method in CROSS_ENSEMBLES
 
 
 def available_methods(backbone: str = "MobileNetV2",
@@ -236,6 +246,22 @@ def load(method: str) -> dict:
 
 
 def load_any(method: str) -> dict:
+    if is_cross_ensemble(method):
+        from . import feature_model_store
+        img_name, feat_name = CROSS_ENSEMBLES[method]
+        img_b = load(img_name)
+        feat_b = feature_model_store.load(feat_name)
+        if list(feat_b["class_names"]) != list(img_b["class_names"]):
+            raise ValueError(
+                f"Учасники ансамблю «{method}» мають різний порядок класів.")
+        if feat_b.get("use_file_number"):
+            raise ValueError(
+                f"Модель ознак «{feat_name}» навчена з file_number — "
+                "для ансамблю з картинкою вона не підходить.")
+        return {"method": method, "kind": "cross_ensemble",
+                "image": img_b, "features": feat_b,
+                "spec": img_b["spec"],
+                "class_names": list(img_b["class_names"])}
     if not is_ensemble(method):
         return load(method)
     members = [load(m) for m in ENSEMBLES[method]]
@@ -280,6 +306,19 @@ def list_saved(backbone: str = "MobileNetV2") -> list[dict]:
                 "n_features": None,
                 "spec": saved[members[0]]["spec"],
             })
+    from . import feature_model_store
+    for name, (img_name, feat_name) in CROSS_ENSEMBLES.items():
+        if img_name in saved and os.path.exists(
+                feature_model_store.model_path(feat_name)):
+            out.append({
+                "method": name,
+                "members": [img_name, f"features + {feat_name}"],
+                "cross": True,
+                "trained_at": saved[img_name]["trained_at"],
+                "n_train_pulses": saved[img_name]["n_train_pulses"],
+                "n_features": None,
+                "spec": saved[img_name]["spec"],
+            })
     return out
 
 
@@ -307,8 +346,26 @@ def load_keras(bundle: dict):
     return _KERAS_CACHE[p]
 
 
+def features_proba(bundle: dict, feats: list[dict]) -> np.ndarray:
+    cols = bundle["feature_cols"]
+    F = np.array([[f[c] for c in cols] for f in feats], dtype=np.float64)
+    est = bundle["estimator"]
+    proba = est.predict_proba(bundle["scaler"].transform(F))
+    ordered = np.zeros((len(F), len(bundle["class_names"])), dtype=float)
+    for j, cls_idx in enumerate(est.classes_):
+        ordered[:, int(cls_idx)] = proba[:, j]
+    return ordered
+
+
 def predict_proba(bundle: dict, X: np.ndarray,
-                  verbose: bool = False) -> np.ndarray:
+                  verbose: bool = False,
+                  feats: list[dict] | None = None) -> np.ndarray:
+    if bundle["kind"] == "cross_ensemble":
+        if feats is None or len(feats) != len(X):
+            raise ValueError("Міжгілковому ансамблю потрібні ознаки "
+                             "кожного імпульсу (feats).")
+        return np.mean([predict_proba(bundle["image"], X, verbose=verbose),
+                        features_proba(bundle["features"], feats)], axis=0)
     if bundle["kind"] == "ensemble":
         return np.mean([predict_proba(b, X, verbose=verbose)
                         for b in bundle["members"]], axis=0)

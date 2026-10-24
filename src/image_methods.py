@@ -33,6 +33,7 @@ except ImportError:
 IMAGE_RESULTS_CSV = os.path.join(cfg.RESULTS_DIR, "image_branch_results.csv")
 IMAGE_ABLATION_CSV = os.path.join(cfg.RESULTS_DIR, "image_input_ablation.csv")
 OOF_DIR = os.path.join(cfg.RESULTS_DIR, "oof")
+FEATURES_OOF_SPEC = "features35"
 
 
 def _slug(method: str) -> str:
@@ -45,15 +46,21 @@ def oof_path(method: str, spec_name: str) -> str:
 
 def save_oof(method: str, data: "ImageData", oof: np.ndarray,
              weights: np.ndarray, fold_test_idx: list[np.ndarray]) -> str:
-    os.makedirs(OOF_DIR, exist_ok=True)
     fold = np.full(len(data.y), -1, dtype=int)
     for k, te in enumerate(fold_test_idx):
         fold[te] = k
-    p = oof_path(method, data.spec.name)
-    np.savez_compressed(p, oof=oof, y=data.y, weights=weights, fold=fold,
-                        image_key=np.asarray(data.image_key, dtype=str),
-                        pulse_id=np.asarray(data.pulse_id, dtype=str),
-                        class_names=np.asarray(data.class_names, dtype=str))
+    return save_oof_arrays(method, data.spec.name, oof, data.y, weights, fold,
+                           data.image_key, data.pulse_id, data.class_names)
+
+
+def save_oof_arrays(method: str, spec_name: str, oof, y, weights, fold,
+                    image_key, pulse_id, class_names) -> str:
+    os.makedirs(OOF_DIR, exist_ok=True)
+    p = oof_path(method, spec_name)
+    np.savez_compressed(p, oof=oof, y=y, weights=weights, fold=fold,
+                        image_key=np.asarray(image_key, dtype=str),
+                        pulse_id=np.asarray(pulse_id, dtype=str),
+                        class_names=np.asarray(class_names, dtype=str))
     return p
 
 
@@ -67,10 +74,11 @@ def _folds_from_keys(y: np.ndarray, image_key: np.ndarray,
     return fold
 
 
-def ensemble_row(name: str, members: list[str], spec_name: str) -> dict | None:
+def ensemble_row(name: str, members: list, spec_name: str) -> dict | None:
     zs = []
     for m in members:
-        p = oof_path(m, spec_name)
+        method, spec = m if isinstance(m, tuple) else (m, spec_name)
+        p = oof_path(method, spec)
         if not os.path.exists(p):
             return None
         z = dict(np.load(p))
@@ -80,8 +88,10 @@ def ensemble_row(name: str, members: list[str], spec_name: str) -> dict | None:
     ref = zs[0]
     for z in zs[1:]:
         if (list(z["pulse_id"]) != list(ref["pulse_id"])
+                or list(z.get("class_names", [])) != list(ref.get("class_names", []))
                 or not np.array_equal(z["fold"], ref["fold"])):
             return None
+    members = [m[0] if isinstance(m, tuple) else m for m in members]
     oof = np.mean([z["oof"] for z in zs], axis=0)
     y, w, key, fold = ref["y"], ref["weights"], ref["image_key"], ref["fold"]
     row = {

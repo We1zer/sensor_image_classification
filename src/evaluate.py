@@ -137,6 +137,7 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
     strategies = list(fz.STRATEGIES.keys())
 
     oof_proba = np.full((len(df), n_classes), np.nan, dtype=float)
+    fold_of = np.full(len(df), -1, dtype=int)
 
     fold_pulse_f1: list[float] = []
     fold_img_f1: dict[str, list[float]] = {s: [] for s in strategies}
@@ -156,6 +157,7 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
         for j, cls_idx in enumerate(model.classes_):
             ordered[:, int(cls_idx)] = proba[:, j]
         oof_proba[te] = ordered
+        fold_of[te] = fold - 1
 
         y_pulse = np.argmax(ordered, axis=1)
         fold_pulse_f1.append(
@@ -266,6 +268,15 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
         "class_names": class_names,
         "model_name": model_name,
         "plot_paths": plot_paths,
+        "oof": {
+            "oof": oof_proba[evaluated],
+            "y": y[evaluated],
+            "weights": weights_all[evaluated],
+            "fold": fold_of[evaluated],
+            "image_key": image_key[evaluated],
+            "pulse_id": (df["pulse_id"].values[evaluated]
+                         if "pulse_id" in df.columns else None),
+        },
     }
 
 

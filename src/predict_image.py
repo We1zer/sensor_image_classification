@@ -70,7 +70,7 @@ def predict_image_model(image_path: str,
 
     bounds = find_pulse_boundaries(y, method=_segmentation_method())
 
-    arrays, weights_acc, indices = [], [], []
+    arrays, weights_acc, indices, feats_acc = [], [], [], []
     for k, (a, b) in enumerate(bounds):
         pulse = crop_pulse_signal(y, a, b)
         local_cov = segment_coverage(y_raw, a, b)
@@ -85,6 +85,7 @@ def predict_image_model(image_path: str,
 
         feats = extract_features(pulse)
         arrays.append(arr)
+        feats_acc.append(feats)
         weights_acc.append(fz.pulse_quality_weight(
             local_cov, feats.get("amp_to_noise", 1.0)))
         indices.append(k)
@@ -95,7 +96,9 @@ def predict_image_model(image_path: str,
                       "достатньо якісних імпульсів.")
 
     X = np.stack(arrays)
-    probs = store.predict_proba(bundle, X)
+    probs = store.predict_proba(bundle, X, feats=feats_acc)
+    branch = ("image+features" if bundle.get("kind") == "cross_ensemble"
+              else "image")
 
     pulse_predictions = []
     for row, k in zip(probs, indices):
@@ -114,7 +117,7 @@ def predict_image_model(image_path: str,
     result = {
         "image": image_path,
         "model": method,
-        "branch": "image",
+        "branch": branch,
         "spec": spec.name,
         "n_pulses_total": len(bounds),
         "n_pulses_valid": len(pulse_predictions),
