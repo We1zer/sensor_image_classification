@@ -38,6 +38,62 @@
       </div>
 
       <div class="row g-3">
+        <div class="col-12">
+          <label for="model" class="form-label">Модель</label>
+          {% macro f1(key) %}{% if leaderboard.get(key) %} — f1 {{ '%.4f' % leaderboard[key].image_f1 }}{% endif %}{% endmacro %}
+          <select class="form-select" id="model" name="model">
+            <optgroup label="Гілка ознак (35 числових)">
+              {% for m in feature_models %}
+                <option value="features:{{ m.method }}"
+                        {% if selected_model == 'features:' ~ m.method %}selected{% endif %}>
+                  {{ m.method }}{{ f1('features + ' ~ m.method) }}{% if default_choice == 'features:' ~ m.method %} · найкраща за CV{% endif %}
+                </option>
+              {% endfor %}
+              <option value="features" {% if selected_model == 'features' %}selected{% endif %}>
+                {{ features_model }} (сторінка Training) — один спліт, рівень імпульсу{% if features_split_f1 is not none %}, f1 {{ '%.4f' % features_split_f1 }}{% endif %}
+              </option>
+            </optgroup>
+            <optgroup label="Гілка картинок (192×96, gray+mask)">
+              {% for m in image_models %}
+                <option value="image:{{ m.method }}"
+                        {% if selected_model == 'image:' ~ m.method %}selected{% endif %}>
+                  {{ m.method }} ({{ '%s ознак' % m.n_features if m.n_features else 'середнє ймовірностей' }}){{ f1(m.method) }}
+                </option>
+              {% endfor %}
+            </optgroup>
+          </select>
+          <div class="form-text">
+            Поруч із назвою — <strong>f1-macro на рівні знімка</strong>
+            (GroupKFold(5), out-of-fold, зі злиттям рішень) із
+            <code>results/all_models_comparison.csv</code>. Обидві гілки
+            працюють з одного знімка: сегментація імпульсів і злиття спільні,
+            різниця лише в тому, що подається класифікатору.
+            Модель зі сторінки Training обрана на одному спліті за
+            pulse-level f1 — її число з рештою не порівнюється.
+            {% if not image_models %}
+              Картинкові моделі ще не збережені —
+              <code>python -m src.image_model_store</code>.
+            {% endif %}
+            {% if not feature_models %}
+              Моделі ознак ще не збережені —
+              <code>python -m src.feature_model_store</code>.
+            {% endif %}
+          </div>
+          {% if image_models %}
+            <div class="alert alert-warning py-2 px-3 small mt-2 mb-0">
+              <i class="bi bi-exclamation-triangle"></i>
+              <strong>Впевненість на знімках із <code>dataset/</code> не є
+              оцінкою якості.</strong> Картинкові моделі донавчені на
+              <em>всьому</em> наборі, тож ці знімки вони вже бачили і дають
+              95–100%. Моделі на ознаках теж донавчені на всьому наборі, крім
+              моделі зі сторінки Training — вона навчена на train-спліті,
+              тому на тих самих файлах виглядає «гіршою». Чесні числа — лише в
+              крос-валідації на сторінці
+              <a href="{{ url_for('experiments.view') }}">Experiments</a>.
+            </div>
+          {% endif %}
+        </div>
+
         <div class="col-12 col-md-6">
           <label for="file_number" class="form-label">file_number (опційно)</label>
           <input type="number" class="form-control" id="file_number" name="file_number"
@@ -47,9 +103,20 @@
           </div>
         </div>
         <div class="col-12 col-md-6 d-flex align-items-center">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="invert" id="invert">
-            <label class="form-check-label" for="invert">Інвертувати кольори</label>
+          <div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="invert" id="invert"
+                     {% if invert_checked %}checked{% endif %}>
+              <label class="form-check-label" for="invert">Інвертувати кольори</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox"
+                     name="compare_models" id="compare_models"
+                     {% if not image_models %}disabled{% elif compare_checked %}checked{% endif %}>
+              <label class="form-check-label" for="compare_models">
+                Показати рішення всіх моделей
+              </label>
+            </div>
           </div>
         </div>
       </div>

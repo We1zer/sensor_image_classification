@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import math
+import time
 from flask import (
     Blueprint, render_template, request, redirect, url_for,
     jsonify, send_file, abort,
@@ -77,6 +78,44 @@ def _summary_from_disk() -> dict | None:
         return None
 
 
+def _leaderboard() -> dict | None:
+    import pandas as pd
+    from src.compare_all import ALL_MODELS_CSV
+
+    if not os.path.exists(ALL_MODELS_CSV):
+        return None
+    try:
+        df = pd.read_csv(ALL_MODELS_CSV)
+    except Exception:
+        return None
+    if df.empty:
+        return None
+
+    cols = ["branch", "method", "pulse_f1", "image_f1_best",
+            "best_strategy", "image_f1_std"]
+    df = df[[c for c in cols if c in df.columns]]
+    return {
+        "rows": df.to_dict(orient="records"),
+        "path": cfg.to_rel(ALL_MODELS_CSV),
+        "updated": time.strftime("%Y-%m-%d %H:%M",
+                                 time.localtime(os.path.getmtime(ALL_MODELS_CSV))),
+    }
+
+
+def _single_split_meta() -> dict | None:
+    p = os.path.join(cfg.RESULTS_DIR, "model_comparison.csv")
+    if not os.path.exists(p):
+        return None
+    ts = os.path.getmtime(p)
+    from src.compare_all import ALL_MODELS_CSV
+    stale = (os.path.exists(ALL_MODELS_CSV)
+             and ts < os.path.getmtime(ALL_MODELS_CSV))
+    return {
+        "updated": time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)),
+        "stale": stale,
+    }
+
+
 @bp_training.route("/", methods=["GET"])
 def view():
     job_id = request.args.get("job")
@@ -112,6 +151,8 @@ def view():
         report_text=_read_classification_report() if summary else None,
         features_csv_exists=os.path.exists(cfg.FEATURES_CSV),
         has_xgboost=HAS_XGBOOST,
+        leaderboard=_leaderboard(),
+        single_split=_single_split_meta(),
     )
 
 

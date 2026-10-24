@@ -36,10 +36,19 @@
               {{ format_proba(result.final_confidence) }}
             </span>
           </p>
-          <p class="text-muted small mb-0">
+          <p class="text-muted small mb-1">
             Знайдено імпульсів: <strong>{{ result.n_pulses_total }}</strong>,
             якісних: <strong>{{ result.n_pulses_valid }}</strong>
           </p>
+          {% if result.model %}
+            <p class="text-muted small mb-0">
+              Модель: <strong>{{ result.model }}</strong>
+              <span class="badge bg-light text-dark border">
+                {{ 'картинки' if result.branch == 'image' else 'ознаки' }}
+              </span>
+              {% if result.spec %}<code class="small">{{ result.spec }}</code>{% endif %}
+            </p>
+          {% endif %}
         </div>
       </div>
     {% else %}
@@ -68,6 +77,55 @@
     <img class="img-fluid border rounded"
          src="data:image/png;base64,{{ chart_b64 }}"
          alt="probabilities chart">
+  </div>
+</div>
+{% endif %}
+
+{% if comparison %}
+<div class="card mt-3">
+  <div class="card-header bg-light">
+    <i class="bi bi-diagram-3"></i> Рішення всіх моделей на цьому знімку
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-2">
+        <thead>
+          <tr>
+            <th>Гілка</th>
+            <th>Модель</th>
+            <th>image f1 (CV)</th>
+            <th>Клас</th>
+            <th>Впевненість</th>
+            <th>Якісних імпульсів</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in comparison %}
+            <tr{% if c.final_class and c.final_class != result.final_class %} class="table-warning"{% endif %}>
+              <td><span class="badge bg-secondary">{{ c.branch }}</span></td>
+              <td class="small">{{ c.model }}</td>
+              <td class="small text-muted">
+                {{ '%.4f' % c.image_f1 if c.image_f1 else '—' }}
+              </td>
+              {% if c.error %}
+                <td colspan="3" class="text-danger small">{{ c.error }}</td>
+              {% else %}
+                <td><strong>{{ c.final_class or '—' }}</strong></td>
+                <td>{{ format_proba(c.confidence or 0) }}</td>
+                <td>{{ c.n_valid }}</td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small mb-0">
+      Жовтим підсвічено моделі, що розійшлися з обраною. Однакові метрики
+      на крос-валідації не гарантують однакового рішення на конкретному знімку.
+      <strong>Впевненості між гілками не порівнюються напряму:</strong>
+      моделі донавчені на всьому наборі, а модель зі сторінки Training — лише
+      на train-спліті, тож на знімку з <code>dataset/</code> перші завищені.
+    </p>
   </div>
 </div>
 {% endif %}
@@ -110,8 +168,140 @@
 </div>
 {% endif %}
 
+{% if trace %}
+<div class="card mt-3">
+  <div class="card-header bg-light">
+    <i class="bi bi-diagram-2"></i> Як оброблено знімок (покроково)
+  </div>
+  <div class="card-body">
+    {% if trace.error %}
+      <div class="alert alert-secondary mb-0 small">
+        Не вдалося побудувати візуалізацію: {{ trace.error }}
+      </div>
+    {% else %}
+      {% if trace.summary %}
+        <p class="mb-3">
+          Знайдено імпульсів: <strong>{{ trace.summary.found }}</strong> ·
+          <span class="badge" style="background:#28aa28">пройшли контроль: {{ trace.summary.accepted }}</span>
+          <span class="badge" style="background:#dc2828">відкинуті контролем: {{ trace.summary.rejected }}</span>
+          <span class="badge" style="background:#969696">не імпульс (край кадру): {{ trace.summary.discarded }}</span>
+          {% if trace.segmentation_used and trace.segmentation_used != 'full_cycle' %}
+            <span class="badge bg-warning text-dark">резервна сегментація: {{ trace.segmentation_used }}</span>
+          {% endif %}
+        </p>
+      {% endif %}
+
+      {% for step in trace.steps %}
+        <div class="mb-4">
+          <h6 class="mb-1">{{ step.title }}</h6>
+          <p class="small text-muted mb-2">{{ step.text }}</p>
+          {% if step.warn %}
+            <div class="alert alert-warning py-1 px-2 small mb-2">
+              <i class="bi bi-exclamation-triangle"></i> {{ step.warn }}
+            </div>
+          {% endif %}
+          <div class="d-flex flex-wrap gap-2">
+            {% for im in step.images %}
+              <img class="img-fluid border rounded" style="max-height:420px"
+                   src="data:image/png;base64,{{ im }}" alt="{{ step.title }}">
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+
+      {% if trace.stopped %}
+        <div class="alert alert-danger mb-0">
+          <i class="bi bi-x-octagon"></i> <strong>Знімок відкинуто:</strong> {{ trace.stopped }}
+        </div>
+      {% endif %}
+
+      {% if trace.segments %}
+        <h6 class="mb-1">6. Кожен шматок сигналу: рішення і причина</h6>
+        <p class="small text-muted mb-2">
+          Правила контролю якості: {{ trace.qc_rules }}.
+          Вага — внесок імпульсу в зважене злиття (покриття × amp_to_noise).
+          {% if trace.image_model %}
+            «Вхід моделі» — що саме бачить картинкова модель
+            (<code>{{ trace.image_spec }}</code>). Це <strong>один</strong>
+            вхід — масив висота × ширина × канали; канали лише показані поруч:
+            <em>gray</em> — сам знімок у відтінках сірого (з сіткою й написами
+            осцилографа), <em>mask</em> — лише пікселі жовтої кривої.
+            Обидва вписано в 192×96 зі збереженням пропорцій (чорні поля —
+            доповнення).
+          {% endif %}
+        </p>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Стовпці</th>
+                <th>Рішення</th>
+                <th>Причина / метрики</th>
+                <th>Шматок знімка</th>
+                {% if trace.image_model %}<th>Вхід моделі</th>{% endif %}
+                <th>Прогноз</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in trace.segments %}
+                <tr>
+                  <td>{{ s.label }}</td>
+                  <td class="small text-nowrap">{{ s.start }}–{{ s.end }}<br>
+                    <span class="text-muted">{{ s.width }} px</span></td>
+                  <td>
+                    {% if s.status == 'accepted' %}
+                      <span class="badge" style="background:#28aa28">у модель</span>
+                    {% elif s.status == 'rejected' %}
+                      <span class="badge" style="background:#dc2828">відкинуто</span>
+                    {% else %}
+                      <span class="badge" style="background:#969696">не імпульс</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {% for r in s.reasons %}<div>• {{ r }}</div>{% endfor %}
+                    {% if s.amplitude is defined %}
+                      <div class="text-muted">
+                        розмах {{ '%.0f' % s.amplitude }} px ·
+                        покриття {{ '%.0f' % (s.coverage * 100) }}% ·
+                        шумовість {{ '%.3f' % s.noise if s.noise == s.noise and s.noise < 1e9 else '—' }}
+                        {% if s.weight is defined %} · вага {{ '%.1f' % s.weight }}{% endif %}
+                      </div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if s.thumb %}
+                      <img class="border rounded" style="max-height:110px;max-width:220px"
+                           src="data:image/png;base64,{{ s.thumb }}" alt="{{ s.label }}">
+                    {% endif %}
+                  </td>
+                  {% if trace.image_model %}
+                    <td>
+                      {% if s.model_input %}
+                        <img class="border rounded" style="max-height:110px"
+                             src="data:image/png;base64,{{ s.model_input }}" alt="input">
+                      {% endif %}
+                    </td>
+                  {% endif %}
+                  <td class="small">
+                    {% if s.pred_class %}
+                      <strong>{{ s.pred_class }}</strong><br>
+                      <span class="text-muted">{{ format_proba(s.pred_conf) }}</span>
+                    {% else %}—{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <div class="mt-3">
-  <a class="btn btn-outline-primary" href="{{ url_for('predict.view') }}">
+  <a class="btn btn-outline-primary" href="{{ again_url or url_for('predict.view') }}">
     <i class="bi bi-arrow-left"></i> Класифікувати ще
   </a>
 </div>

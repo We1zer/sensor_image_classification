@@ -14,6 +14,7 @@ from web.routes_pipeline import bp_pipeline
 from web.routes_training import bp_training
 from web.routes_predict import bp_predict
 from web.routes_results import bp_results
+from web.routes_experiments import bp_experiments
 from web.helpers import MAX_UPLOAD_BYTES
 
 
@@ -38,6 +39,7 @@ def create_app() -> Flask:
     app.register_blueprint(bp_training, url_prefix="/training")
     app.register_blueprint(bp_predict,  url_prefix="/predict")
     app.register_blueprint(bp_results,  url_prefix="/results")
+    app.register_blueprint(bp_experiments, url_prefix="/experiments")
 
     return app
 

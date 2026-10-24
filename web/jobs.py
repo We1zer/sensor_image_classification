@@ -14,7 +14,18 @@ def _make_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def start_job(target: Callable, *args, label: str = "", **kwargs) -> str:
+def update_progress(job_id: str, percent: int, message: str = "") -> None:
+    with _LOCK:
+        job = JOBS.get(job_id)
+        if job is None or job["status"] != "running":
+            return
+        job["progress"] = max(0, min(100, int(percent)))
+        if message:
+            job["message"] = message
+
+
+def start_job(target: Callable, *args, label: str = "",
+              inject_progress: bool = False, **kwargs) -> str:
     job_id = _make_id()
     with _LOCK:
         JOBS[job_id] = {
@@ -26,6 +37,9 @@ def start_job(target: Callable, *args, label: str = "", **kwargs) -> str:
             "result": None,
             "error": None,
         }
+
+    if inject_progress:
+        kwargs["progress"] = lambda pct, msg="": update_progress(job_id, pct, msg)
 
     def runner() -> None:
         try:

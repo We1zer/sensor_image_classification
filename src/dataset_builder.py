@@ -11,7 +11,7 @@ except ImportError:
 from . import config as cfg
 from .data_loader import create_image_index
 from .image_preprocessing import read_image, preprocess_pipeline
-from .signal_extraction import mask_to_clean_signal
+from .signal_extraction import mask_to_clean_signal, segment_coverage
 from .pulse_segmentation import (
     find_pulse_boundaries, crop_pulse_image, crop_pulse_signal,
 )
@@ -27,6 +27,16 @@ def _save_pulse_image(pulse_img: np.ndarray, out_path: str) -> None:
         buf.tofile(out_path)
 
 
+def _clear_generated(root: str, pattern: str) -> int:
+    import glob
+    removed = 0
+    for folder in cfg.CLASS_FOLDERS:
+        for fp in glob.glob(os.path.join(root, folder, pattern)):
+            os.remove(fp)
+            removed += 1
+    return removed
+
+
 def build_dataset(invert: bool = False,
                   save_pulse_images: bool = True,
                   save_pulse_signals: bool = False,
@@ -40,6 +50,11 @@ def build_dataset(invert: bool = False,
         if verbose:
             print("[!] Папки dataset порожні. Додайте PNG-файли в dataset/PNG-1*/.")
         return pd.DataFrame()
+
+    if save_pulse_images:
+        _clear_generated(cfg.PULSE_IMAGES_DIR, "*__*__p*.png")
+    if save_pulse_signals:
+        _clear_generated(cfg.PULSE_SIGNALS_DIR, "*__*__p*.npy")
 
     rows = []
     rejected_count = 0
@@ -67,7 +82,8 @@ def build_dataset(invert: bool = False,
         inverted = prep["inverted"]
         mask = prep["mask"]
 
-        x, y, cov = mask_to_clean_signal(mask, do_smooth=True)
+        x, y, cov, y_raw = mask_to_clean_signal(mask, do_smooth=True,
+                                                return_raw=True)
 
         if cov < 0.05:
             rejected_count += 1
@@ -77,7 +93,7 @@ def build_dataset(invert: bool = False,
 
         for k, (a, b) in enumerate(bounds):
             pulse = crop_pulse_signal(y, a, b)
-            local_cov = float(np.sum(~np.isnan(pulse))) / max(1, len(pulse))
+            local_cov = segment_coverage(y_raw, a, b)
 
             valid, qc = is_valid_pulse(pulse, coverage_value=local_cov)
 

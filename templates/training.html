@@ -122,8 +122,28 @@
         <div id="summary-block" class="mt-3"
              {% if not summary %}style="display:none;"{% endif %}>
           {% if summary %}
-            <h5 class="h6"><i class="bi bi-trophy"></i> Найкраща модель:
-              <span class="badge bg-success">{{ summary.best_name }}</span></h5>
+            <h5 class="h6">
+              <i class="bi bi-clock-history"></i>
+              Прогін цієї сторінки: один train/test спліт, рівень імпульсу
+              {% if single_split %}
+                <span class="badge bg-light text-dark border">
+                  {{ single_split.updated }}
+                </span>
+              {% endif %}
+              — найкраща тут:
+              <span class="badge bg-secondary">{{ summary.best_name }}</span>
+            </h5>
+            <p class="small text-muted mb-2">
+              Це <strong>не</strong> підсумкові метрики роботи: одне розбиття,
+              без злиття рішень на знімок. Рейтинг за фінальним протоколом —
+              у таблиці нижче.
+              {% if single_split and single_split.stale %}
+                <span class="text-danger">
+                  Таблиця старіша за зведену — перезапустіть навчання, якщо
+                  потрібні свіжі числа саме тут.
+                </span>
+              {% endif %}
+            </p>
 
             {% if summary.rows %}
               <div class="table-responsive">
@@ -179,6 +199,58 @@
     </div>
   </div>
 </div>
+
+{% if leaderboard %}
+<div class="card mt-3 border-success">
+  <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-trophy"></i> Підсумковий рейтинг усіх моделей
+      (GroupKFold(5), OOF, рівень знімка)</span>
+    <span class="small">{{ leaderboard.updated }}</span>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted">
+      Це метрики, за якими робляться висновки роботи: кожна модель оцінена
+      однаковим протоколом, а рішення по імпульсах злиті в одне рішення на
+      знімок. Джерело — <code>{{ leaderboard.path }}</code>.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle mb-2">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Гілка</th>
+            <th>Модель</th>
+            <th>pulse f1</th>
+            <th><strong>image f1</strong></th>
+            <th>стратегія злиття</th>
+            <th>± std</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in leaderboard.rows %}
+            <tr {% if loop.first %}class="table-success fw-semibold"{% endif %}>
+              <td>{{ loop.index }}</td>
+              <td><span class="badge bg-secondary">{{ r.branch }}</span></td>
+              <td>{{ r.method }}</td>
+              <td>{{ '%.4f' % r.pulse_f1 if r.pulse_f1 == r.pulse_f1 else '—' }}</td>
+              <td><strong>{{ '%.4f' % r.image_f1_best }}</strong></td>
+              <td class="small text-muted">{{ r.best_strategy }}</td>
+              <td class="small text-muted">
+                {{ '%.4f' % r.image_f1_std if r.image_f1_std == r.image_f1_std else '—' }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="small text-muted mb-0">
+      Різниці в межах ± std статистично незначущі: верхні рядки слід читати
+      як паритет, а не як перевагу. Перерахувати —
+      <a href="{{ url_for('experiments.view') }}">Experiments → Порахувати таблицю</a>.
+    </p>
+  </div>
+</div>
+{% endif %}
 
 {% if has_model_comparison or cm_name %}
 <div class="row g-3 mt-1">

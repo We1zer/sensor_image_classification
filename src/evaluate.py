@@ -90,6 +90,7 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
                                use_xgboost: bool = True,
                                feature_cols: list[str] | None = None,
                                save_plots: bool = True,
+                               save_csv: bool = True,
                                verbose: bool = True) -> dict:
     from sklearn.preprocessing import StandardScaler, LabelEncoder
     from sklearn.model_selection import GroupKFold
@@ -221,7 +222,8 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
 
     os.makedirs(cfg.RESULTS_DIR, exist_ok=True)
     out_csv = os.path.join(cfg.RESULTS_DIR, "fusion_comparison.csv")
-    results_df.to_csv(out_csv, index=False)
+    if save_csv:
+        results_df.to_csv(out_csv, index=False)
 
     plot_paths = {}
     if save_plots:
@@ -252,7 +254,8 @@ def cross_validate_with_fusion(features_csv: str = cfg.FEATURES_CSV,
         print()
         print(f"  Δ (image[{best_strat}] − pulse) = "
               f"{img_results[best_strat]['f1_oof'] - pulse_f1_oof:+.4f}")
-        print(f"[OK] Збережено: {out_csv}")
+        if save_csv:
+            print(f"[OK] Збережено: {out_csv}")
 
     return {
         "results": results_df,

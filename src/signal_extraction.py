@@ -66,11 +66,18 @@ def normalize_signal(y: np.ndarray) -> np.ndarray:
     return (y - y_min) / (y_max - y_min)
 
 
+def segment_coverage(y_raw: np.ndarray, start: int, end: int) -> float:
+    return coverage(y_raw[start:end])
+
+
 def mask_to_clean_signal(mask: np.ndarray,
-                         do_smooth: bool = True) -> tuple[np.ndarray, np.ndarray, float]:
+                         do_smooth: bool = True,
+                         return_raw: bool = False):
     x, y_raw = mask_to_signal(mask)
     cov = coverage(y_raw)
     y = interpolate_missing(x, y_raw)
     if do_smooth:
         y = smooth_signal(y)
+    if return_raw:
+        return x, y, cov, y_raw
     return x, y, cov

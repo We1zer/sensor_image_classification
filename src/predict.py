@@ -6,39 +6,51 @@ import pandas as pd
 
 from . import config as cfg
 from .image_preprocessing import read_image, preprocess_pipeline
-from .signal_extraction import mask_to_clean_signal
+from .signal_extraction import mask_to_clean_signal, segment_coverage
 from .pulse_segmentation import find_pulse_boundaries, crop_pulse_signal
 from .pulse_quality import is_valid_pulse
 from .feature_extraction import extract_features
 from . import fusion as fz
 
 
-def _load_model_bundle():
+def _load_model_bundle(model_key: str | None = None):
+    if model_key:
+        from .feature_model_store import load as _load_feat
+        b = _load_feat(model_key)
+        meta = {
+            "best_name": b["method"],
+            "feature_cols": b["feature_cols"],
+            "use_file_number": b.get("use_file_number", False),
+            "trained_at": b.get("trained_at"),
+            "n_train_rows": b.get("n_train_rows"),
+        }
+        return b["estimator"], b["scaler"], list(b["class_names"]), meta
+
     model = joblib.load(os.path.join(cfg.MODELS_DIR, "best_ml_model.pkl"))
     scaler = joblib.load(os.path.join(cfg.MODELS_DIR, "scaler.pkl"))
     le = joblib.load(os.path.join(cfg.MODELS_DIR, "label_encoder.pkl"))
     with open(os.path.join(cfg.MODELS_DIR, "best_model_meta.json"),
               "r", encoding="utf-8") as f:
         meta = json.load(f)
-    return model, scaler, le, meta
+    return model, scaler, list(le.classes_), meta
 
 
 def predict_image(image_path: str,
                   invert: bool = False,
                   file_number: int = 0,
                   fusion_strategy: str = "weighted",
+                  model_key: str | None = None,
                   verbose: bool = True) -> dict:
     if not os.path.exists(image_path):
         raise FileNotFoundError(image_path)
 
-    model, scaler, le, meta = _load_model_bundle()
+    model, scaler, class_names, meta = _load_model_bundle(model_key)
     feature_cols = meta["feature_cols"]
     use_file_number = meta.get("use_file_number", False)
-    class_names = list(le.classes_)
 
     img = read_image(image_path)
     prep = preprocess_pipeline(img, invert=invert)
-    x, y, cov = mask_to_clean_signal(prep["mask"])
+    x, y, cov, y_raw = mask_to_clean_signal(prep["mask"], return_raw=True)
 
     if cov < 0.05:
         return {
@@ -67,7 +79,7 @@ def predict_image(image_path: str,
 
     for k, (a, b) in enumerate(bounds):
         pulse = crop_pulse_signal(y, a, b)
-        local_cov = float(np.sum(~np.isnan(pulse))) / max(1, len(pulse))
+        local_cov = segment_coverage(y_raw, a, b)
         valid, qc = is_valid_pulse(pulse, coverage_value=local_cov)
         if not valid:
             continue
@@ -128,6 +140,8 @@ def predict_image(image_path: str,
 
     result = {
         "image": image_path,
+        "model": meta.get("best_name", "best_ml_model"),
+        "branch": "features",
         "n_pulses_total": len(bounds),
         "n_pulses_valid": len(pulse_predictions),
         "pulse_predictions": pulse_predictions,

@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+{% block title %}Experiments — Sensor Classifier{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Experiments</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1"><i class="bi bi-diagram-2"></i> Гілки дослідження</h1>
+<p class="text-muted">
+  Дві незалежні гілки: одна працює з <strong>готовими картинками</strong>
+  вирізаних імпульсів, друга — з <strong>числовими ознаками</strong>,
+  витягнутими з тих самих картинок. Спільного стану не мають, тому можуть
+  рахуватись одночасно.
+</p>
+
+<form action="{{ url_for('experiments.run') }}" method="post">
+<div class="row g-3">
+
+  <div class="col-12 col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-image"></i> <strong>Image-гілка</strong></span>
+        <span class="badge bg-secondary" id="badge-image">
+          {{ jobs.image.status if jobs.image else 'idle' }}
+        </span>
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">
+          Вхід: <code>{{ main_spec }}</code> —
+          вирізані імпульси, letterbox зі збереженням пропорцій,
+          канали grayscale + HSV-маска.
+        </p>
+
+        {% if not ready.image %}
+          <div class="alert alert-warning py-2 small mb-2">
+            Немає вирізаних імпульсів у <code>processed/pulse_images/</code>.
+            Спочатку <a href="{{ url_for('pipeline.view') }}">Pipeline</a>.
+          </div>
+        {% else %}
+          <p class="small text-muted mb-2">
+            Знайдено <strong>{{ ready.n_pulse_images }}</strong> PNG імпульсів.
+          </p>
+        {% endif %}
+
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="do_ablation"
+                 id="do_ablation" checked>
+          <label class="form-check-label" for="do_ablation">
+            <strong>1.</strong> Ablation представлення входу
+            <small class="text-muted d-block">
+              stretch/letterbox × gray/rgb/mask × розмір, пробник HOG+SVM
+            </small>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="do_hog"
+                 id="do_hog" checked>
+          <label class="form-check-label" for="do_hog">
+            <strong>2.</strong> HOG + SVM / LogReg / RF / XGBoost
+            <small class="text-muted d-block">
+              орієнтації градієнтів — кодують крутизну фронту й спаду
+            </small>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="do_transfer"
+                 id="do_transfer" checked>
+          <label class="form-check-label" for="do_transfer">
+            <strong>3.</strong> Transfer learning (frozen) + класичні голови
+            <small class="text-muted d-block">
+              ваги не донавчаються — витік через екстракцію неможливий
+            </small>
+          </label>
+        </div>
+        <div class="row g-2 ms-4 mb-2">
+          <div class="col-7">
+            <select class="form-select form-select-sm" name="backbone">
+              <option value="MobileNetV2" selected>MobileNetV2</option>
+              <option value="EfficientNetB0">EfficientNetB0</option>
+              <option value="ResNet50">ResNet50</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="do_cnn"
+                 id="do_cnn" checked>
+          <label class="form-check-label" for="do_cnn">
+            <strong>4.</strong> Виправлений 2D-CNN
+            <small class="text-muted d-block">
+              аугментація без фліпів (обертають час і амплітуду) ·
+              <span class="text-warning-emphasis">найдовший крок</span>
+            </small>
+          </label>
+        </div>
+        <div class="row g-2 ms-4 mb-3">
+          <div class="col-7">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">епох</span>
+              <input type="number" class="form-control" name="cnn_epochs"
+                     value="60" min="5" max="300">
+            </div>
+          </div>
+        </div>
+
+        <div class="progress mb-2" style="height:18px;">
+          <div id="prog-image" class="progress-bar progress-bar-striped"
+               role="progressbar" style="width:0%"></div>
+        </div>
+        <p class="small text-muted mb-2" id="msg-image">
+          {{ jobs.image.message if jobs.image else 'не запускалось' }}
+        </p>
+
+        <button class="btn btn-primary" type="submit" name="branch" value="image"
+                {% if not ready.image %}disabled{% endif %}>
+          <i class="bi bi-play-fill"></i> Запустити image-гілку
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-table"></i> <strong>Features-гілка</strong></span>
+        <span class="badge bg-secondary" id="badge-features">
+          {{ jobs.features.status if jobs.features else 'idle' }}
+        </span>
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">
+          Вхід: 35 числових ознак на імпульс із
+          <code>pulse_features.csv</code> (час, FFT, вейвлети, форма).
+        </p>
+
+        {% if not ready.features %}
+          <div class="alert alert-warning py-2 small mb-2">
+            Немає <code>features/pulse_features.csv</code>.
+            Спочатку <a href="{{ url_for('pipeline.view') }}">Pipeline</a>.
+          </div>
+        {% endif %}
+
+        <ul class="small mb-3">
+          <li><strong>GroupKFold(5)</strong> по 7 базових моделях
+            <small class="text-muted d-block">
+              LR, KNN, SVM, DT, RF, GBM, XGBoost — mean ± std
+            </small>
+          </li>
+          <li><strong>Decision-level fusion</strong>
+            <small class="text-muted d-block">
+              pulse-level проти image-level; majority / mean_proba / weighted
+            </small>
+          </li>
+          <li><strong>Зниження розмірності</strong>
+            <small class="text-muted d-block">
+              PCA(0.95) та LDA перед SVM / RF / GBM
+            </small>
+          </li>
+        </ul>
+
+        <div class="alert alert-light border py-2 small">
+          <i class="bi bi-shield-check"></i>
+          Рахується <strong>без <code>file_number</code></strong>: ablation
+          Фази 7 показав, що він додає +0.05 f1, але кодує порядок
+          експерименту, а не фізику сигналу — це витік.
+        </div>
+
+        <div class="progress mb-2" style="height:18px;">
+          <div id="prog-features" class="progress-bar progress-bar-striped bg-info"
+               role="progressbar" style="width:0%"></div>
+        </div>
+        <p class="small text-muted mb-2" id="msg-features">
+          {{ jobs.features.message if jobs.features else 'не запускалось' }}
+        </p>
+
+        <button class="btn btn-primary" type="submit" name="branch" value="features"
+                {% if not ready.features %}disabled{% endif %}>
+          <i class="bi bi-play-fill"></i> Запустити features-гілку
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex align-items-center gap-3 mt-3">
+  <button class="btn btn-success btn-lg" type="submit" name="branch" value="both"
+          {% if not (ready.image and ready.features) %}disabled{% endif %}>
+    <i class="bi bi-lightning-charge"></i> Запустити обидві паралельно
+  </button>
+  <div class="input-group input-group-sm" style="max-width:190px;">
+    <span class="input-group-text">фолдів</span>
+    <input type="number" class="form-control" name="splits" value="5" min="2" max="10">
+  </div>
+  <span class="text-muted small">
+    обидві гілки рахуються одночасно, кожна пише свій CSV
+  </span>
+</div>
+</form>
+
+<div class="card mt-3">
+  <div class="card-header bg-light d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-table"></i> Порівняння всіх моделей в одній таблиці</span>
+    <span class="badge bg-secondary" id="badge-compare">idle</span>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted">
+      Кожна модель обох гілок під одним протоколом: GroupKFold(5) за
+      <code>source_image</code>, out-of-fold, і три стратегії злиття на знімок
+      поруч. На відміну від гілкових таблиць, image-level рахується для
+      <strong>всіх</strong> моделей на ознаках, а не лише для однієї.
+      2D-CNN береться з попереднього прогону — його перерахунок це ~25 хв.
+    </p>
+
+    <div class="progress mb-2" style="height: 6px;">
+      <div class="progress-bar progress-bar-striped" id="prog-compare"
+           style="width: 0%"></div>
+    </div>
+    <p class="small text-muted mb-3" id="msg-compare"></p>
+
+    <div class="d-flex flex-wrap gap-3 align-items-center">
+      <form action="{{ url_for('experiments.compare') }}" method="post"
+            class="d-flex align-items-center gap-2">
+        <input type="hidden" name="splits" value="5">
+        <button class="btn btn-primary btn-sm" type="submit"
+                {% if any_running or not (ready.features and ready.image) %}disabled{% endif %}>
+          <i class="bi bi-play-fill"></i> Порахувати таблицю
+        </button>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="with_cnn"
+                 id="with_cnn">
+          <label class="form-check-label small" for="with_cnn">
+            перерахувати й 2D-CNN (~25 хв)
+          </label>
+        </div>
+      </form>
+
+      <form action="{{ url_for('experiments.save_image_models') }}" method="post">
+        <button class="btn btn-outline-secondary btn-sm" type="submit"
+                {% if any_running or not ready.image %}disabled{% endif %}>
+          <i class="bi bi-save"></i> Зберегти картинкові моделі для /predict
+        </button>
+      </form>
+
+      {% if saved_models %}
+        <span class="small text-muted">
+          збережено: {{ saved_models|length }}
+          ({{ saved_models[0].trained_at }})
+        </span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div id="tables-block" class="mt-4">
+  {% macro render_table(t, title, hint) %}
+    {% if t %}
+      <div class="card mb-3">
+        <div class="card-header bg-light d-flex justify-content-between">
+          <span>{{ title }}</span>
+          <code class="small text-muted">{{ t.path }}</code>
+        </div>
+        <div class="card-body">
+          {% if hint %}<p class="small text-muted">{{ hint }}</p>{% endif %}
+          <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-0">
+              <thead><tr>
+                {% for c in t.columns %}<th>{{ c }}</th>{% endfor %}
+              </tr></thead>
+              <tbody>
+                {% for row in t.rows %}
+                  <tr {% if loop.first %}class="table-success fw-semibold"{% endif %}>
+                    {% for v in row %}
+                      <td>{{ '—' if v is none else v }}</td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  {% endmacro %}
+
+  {{ render_table(tables.all_models, 'Усі моделі обох гілок (один протокол)',
+                  'Рядок = модель. pulse_f1 — рішення по окремому імпульсу; далі те саме рішення, злите на знімок трьома стратегіями. params_key — фактичні гіперпараметри, якими рахувався рядок.') }}
+  {{ render_table(tables.comparison, 'Найкраще з кожної гілки (image-level)',
+                  'Пряме порівняння двох парадигм на однакових знімках і однаковому протоколі.') }}
+  {{ render_table(tables.ablation, '1. Ablation представлення входу (Група 0)',
+                  'Один класифікатор-пробник, різні представлення входу — тож різниця відноситься до входу, а не до випадковості навчання.') }}
+  {{ render_table(tables.image, 'Image-гілка: методи на картинках',
+                  'GroupKFold(5) за source_image, out-of-fold, image-level — зважене злиття за якістю імпульсу.') }}
+  {{ render_table(tables.features, 'Features-гілка: методи на числових ознаках', '') }}
+
+  {% if not (tables.comparison or tables.ablation or tables.image or tables.features) %}
+    <div class="alert alert-secondary">
+      Результатів ще немає — запустіть будь-яку гілку вище.
+    </div>
+  {% endif %}
+</div>
+
+{% if montages %}
+<div class="card mt-2">
+  <div class="card-header bg-light">
+    <i class="bi bi-eye"></i> Візуальний контроль представлення входу
+    <small class="text-muted ms-2">processed/image_prep_debug/</small>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted">
+      Точні входи моделі: рядок = клас, колонка = зразок. Клік — повний розмір.
+    </p>
+    <ul class="nav nav-pills mb-3" role="tablist">
+      {% for m in montages %}
+        <li class="nav-item">
+          <button class="nav-link {% if m.spec == main_spec %}active{% endif %} btn-sm"
+                  data-bs-toggle="tab" data-bs-target="#tab-{{ loop.index }}"
+                  type="button">
+            {{ m.spec }}
+            {% if m.spec == main_spec %}
+              <i class="bi bi-check-circle-fill ms-1"></i>
+            {% endif %}
+          </button>
+        </li>
+      {% endfor %}
+    </ul>
+    <div class="tab-content">
+      {% for m in montages %}
+        <div class="tab-pane fade {% if m.spec == main_spec %}show active{% endif %}"
+             id="tab-{{ loop.index }}">
+          <a href="{{ url_for('experiments.serve_montage', spec=m.spec) }}"
+             target="_blank">
+            <img class="img-fluid border rounded"
+                 src="{{ url_for('experiments.serve_montage', spec=m.spec) }}"
+                 alt="{{ m.spec }}">
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+  var BRANCHES = ["image", "features", "compare", "save_models"];
+  var RUNNING = {{ any_running|tojson }};
+
+  function paint(branch, s) {
+    var bar = document.getElementById("prog-" + branch);
+    var badge = document.getElementById("badge-" + branch);
+    var msg = document.getElementById("msg-" + branch);
+    if (!bar || !badge) return;
+
+    var pct = (s.status === "running") ? Math.max(5, s.progress || 5) : 100;
+    if (s.status === "idle") pct = 0;
+    bar.style.width = pct + "%";
+    bar.classList.toggle("progress-bar-animated", s.status === "running");
+    bar.classList.toggle("bg-danger", s.status === "error");
+    bar.classList.toggle("bg-success", s.status === "done");
+
+    badge.textContent = s.status;
+    badge.className = "badge " + (
+      s.status === "done" ? "bg-success" :
+      s.status === "error" ? "bg-danger" :
+      s.status === "running" ? "bg-warning text-dark" : "bg-secondary");
+
+    if (msg) msg.textContent = s.error ? s.error : (s.message || "");
+  }
+
+  function tick() {
+    fetch({{ url_for('experiments.api_status')|tojson }})
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var anyRunning = false;
+        BRANCHES.forEach(function (b) {
+          var s = data[b] || {status: "idle", progress: 0};
+          paint(b, s);
+          if (s.status === "running") anyRunning = true;
+        });
+        if (anyRunning) {
+          setTimeout(tick, 1500);
+        } else if (RUNNING) {
+          RUNNING = false;
+          setTimeout(function () { window.location.reload(); }, 800);
+        }
+      })
+      .catch(function () { setTimeout(tick, 3000); });
+  }
+
+  tick();
+})();
+</script>
+{% endblock %}
